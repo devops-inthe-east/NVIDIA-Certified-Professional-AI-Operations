@@ -1,0 +1,16 @@
+# NVIDIA CERTIFIED PROFESSIONAL \u2013 AI OPERATIONS (AI OPS)
+## Exam Question Bank \u2014 SET 2
+### Difficulty Profile: Hard-Heavy | Emphasis: TensorRT-LLM, MIG, Triton Ensembles, NGC/Fleet/Base Command
+
+---
+
+## DOMAIN 1 \u2013 MODEL DEPLOYMENT & INFERENCE OPERATIONS
+
+---
+
+**Question 1:**
+A TensorRT-LLM deployment of a 13B parameter LLM on Triton Inference Server is experiencing a consistent throughput degradation of 60% under sustained load of 200 concurrent users, compared to benchmarks at 10 concurrent users. GPU utilization is at 100%. Memory utilization is 91%. Latency per token increases from 18ms at low load to 74ms under peak load. What is the MOST likely architectural bottleneck and the correct remediation?
+
+Options:
+A. The KV cache is being evicted under high concurrency, forcing recomputation of attention states; increase --kv_cache_free_gpu_mem_fraction in TensorRT-LLM configuration
+B. The TensorRT-LLM engine was compiled with a max_batch_size too low to accommodate 
