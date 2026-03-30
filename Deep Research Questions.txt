@@ -1,7 +1,4 @@
 
-
-
-
 NVIDIA Certified Professional – AI Operations (AI Ops) Certification – Mock Exam
 Executive Summary: This mock exam comprises 21 scenario-driven questions (minimum passing score ~70%) covering NVIDIA AI Operations topics. It is structured for ~60–90 minutes of work, reflecting the official 120-minute, 70–75-question exam
 . Questions span all AI Ops domains, from model deployment and monitoring to Kubernetes orchestration and security. Each question is multiple-choice (A–D) with a clear correct answer and explanation. In practice, allow ~3–5 minutes per question, review answers if time permits, then submit to compute a score out of 21. A passing score is typically around 70–75%.
@@ -22,6 +19,8 @@ flowchart LR
     Start((Start Exam)) --> Questions[Answer Questions (21 questions)]
     Questions --> Review{Review Answers if time remains}
     Review --> Score[Receive Score \n(Scoring: ~70% to pass)]
+
+
 Question 1: A Triton Inference Server is deployed without dynamic batching. The metrics show: Request Count = 2, Inference Count = 9, Execution Count = 2. What does the Execution Count of 2 indicate?
 
 Options:
