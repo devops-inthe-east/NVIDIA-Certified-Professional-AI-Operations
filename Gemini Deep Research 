@@ -1,0 +1,192 @@
+Question 1:
+An ML engineer is deploying a newly trained PyTorch model to an NVIDIA Triton Inference Server instance running in Kubernetes. Upon startup, the Triton container logs show the error: At least one version must be available under version policy for model 'fraud_detection'. The engineer has uploaded the model files to the cloud storage bucket acting as the model repository. What is the most likely cause of this failure?
+Options:
+A. The config.pbtxt file is missing the platform: "pytorch_libtorch" declaration.
+B. The model file was placed directly in the fraud_detection directory rather than inside a numerically named version subdirectory (e.g., 1/).
+C. The PyTorch model was not compiled using TorchScript or exported to ONNX prior to deployment.
+D. The Triton Inference Server instance has exhausted the available GPU memory, preventing the model from loading.
+Correct Answer: B
+Explanation:
+Triton strictly requires a specific directory structure for its model repository. Every model must have a numerically named subdirectory representing its version (e.g., model_repository/model_name/1/model.pt). Placing the model file in the root model directory violates this structure, causing Triton to see zero available versions. Option A would result in an unsupported platform error, not a missing version error. Option C would result in a model loading error (invalid format), not a missing version error. Option D would explicitly log a CUDA Out of Memory (OOM) error.
+Difficulty: Easy
+Domain: Model Deployment & Inference Operations
+Cognitive Level: Apply
+Scenario Type: Deployment
+Question 2:
+You are operating an NLP inference endpoint powered by Triton Inference Server. The SLA requires a maximum latency of 100ms. Currently, the P99 latency is 40ms, but the overall throughput (requests per second) is low, and the NVIDIA GPU utilization metrics show only 25% utilization. You need to maximize throughput while staying within the 100ms SLA. Which configuration change is most appropriate?
+Options:
+A. Enable Multi-Instance GPU (MIG) and partition the GPU to isolate the workload.
+B. Enable Dynamic Batching in the model's config.pbtxt and tune the max_queue_delay_microseconds.
+C. Convert the model to FP32 precision to ensure maximum mathematical throughput.
+D. Migrate the K8s pod to a node with a faster CPU to handle request routing more efficiently.
+Correct Answer: B
+Explanation:
+Dynamic Batching allows Triton to temporarily queue incoming requests and combine them into a single larger batch before sending them to the GPU. This significantly increases GPU utilization and throughput. Because current latency is well below the SLA (40ms vs 100ms), you can afford the slight latency penalty introduced by queueing (max_queue_delay_microseconds). Option A reduces the compute resources available to the model, which does not inherently increase overall throughput. Option C is incorrect as FP32 is less efficient than mixed precision or INT8/FP16. Option D is incorrect because the bottleneck is underutilization of the GPU, not the CPU.
+Difficulty: Medium
+Domain: Performance Optimization & Scaling
+Cognitive Level: Analyze
+Scenario Type: Optimization
+Question 3:
+A Kubernetes pod designed for a multi-GPU training workload is stuck in the Pending state. Executing kubectl describe pod reveals the message: 0/5 nodes are available: 5 Insufficient nvidia.com/gpu. However, running nvidia-smi directly on the cluster nodes shows that all GPUs are currently idle and unallocated. What is the most likely operational failure?
+Options:
+A. The container image lacks the correct NVIDIA CUDA runtime libraries.
+B. The K8s scheduler is failing because the pods lack the required node taints and tolerations.
+C. The NVIDIA GPU Operator is not functioning correctly, or the K8s Device Plugin is failing to advertise GPU resources to the kubelet.
+D. The K8s cluster lacks the necessary underlying network bandwidth (e.g., InfiniBand) to support multi-GPU training.
+Correct Answer: C
+Explanation:
+The Kubernetes scheduler relies on the NVIDIA Device Plugin (managed by the GPU Operator) to expose GPUs as allocatable node resources (nvidia.com/gpu). If the physical GPUs are idle but K8s reports insufficient GPUs, the device plugin is either not running, misconfigured, or failing to register the hardware with the API server. Option A causes a runtime error (CrashLoopBackOff), not a scheduling failure. Option B would result in a node(s) had taint... message, not an Insufficient nvidia.com/gpu message. Option D impacts runtime performance or causes NCCL timeouts, but does not prevent K8s scheduling.
+Difficulty: Hard
+Domain: Kubernetes & Orchestration for AI Workloads
+Cognitive Level: Evaluate
+Scenario Type: Incident
+Question 4:
+You are tasked with deploying five lightweight computer vision models to a single K8s node equipped with an NVIDIA A100 (80GB) GPU. The models serve different external clients, requiring strict hardware-level fault isolation and guaranteed QoS. Each model requires approximately 8GB of VRAM. Which NVIDIA technology should you configure?
+Options:
+A. Multi-Process Service (MPS)
+B. Multi-Instance GPU (MIG) with 1g.10gb profiles
+C. Kubernetes GPU Time-Slicing
+D. Triton Inference Server Instance Groups
+Correct Answer: B
+Explanation:
+MIG (Multi-Instance GPU) partitions a single A100 GPU into completely isolated hardware instances (up to 7). This provides strict hardware-level fault isolation, separate memory bandwidth, and guaranteed QoS, perfectly matching the scenario requirements. Option A (MPS) allows sharing but does not provide strict hardware-level fault isolation. Option C (Time-Slicing) provides K8s-level sharing through concurrency but lacks hardware isolation and memory protection between workloads. Option D (Instance Groups) runs multiple instances inside one process, offering zero fault isolation between the clients.
+Difficulty: Medium
+Domain: GPU Resource Management & Scheduling
+Cognitive Level: Apply
+Scenario Type: Deployment
+Question 5:
+You are troubleshooting an observability stack in an AI platform. Prometheus is no longer scraping GPU metrics (like utilization, temperature, and memory usage) from a specific K8s node. You inspect the dcgm-exporter pod on that node and find it is crash-looping with a Connection refused error when attempting to connect to localhost:9400. What is the root cause?
+Options:
+A. The Prometheus ServiceMonitor object was accidentally deleted from the cluster.
+B. The K8s network policy is blocking outbound traffic from the Prometheus server.
+C. The NVIDIA host engine (nv-hostengine) daemon is not running or has crashed on the underlying host.
+D. The DCGM exporter container requires root privileges to access the physical GPU hardware.
+Correct Answer: C
+Explanation:
+The dcgm-exporter relies on the Data Center GPU Manager (DCGM) host engine daemon (nv-hostengine) to collect telemetry from the drivers. If the host engine crashes or is stopped, the exporter cannot connect to its binding port (default 9400) and will fail with a connection refused error. Options A and B would result in missing metrics in the dashboard but would not cause the dcgm-exporter K8s pod to crash loop. Option D is incorrect as the exporter communicates with the daemon over a port, not by requiring direct hardware-level root access in a standard GPU Operator deployment.
+Difficulty: Medium
+Domain: Monitoring & Observability
+Cognitive Level: Analyze
+Scenario Type: Monitoring
+Question 6:
+An engineering team reports that their distributed PyTorch training job on K8s fails sporadically after running smoothly for 12 to 14 hours. The K8s logs show the container exits with a CUDA out of memory exception. Examining the Prometheus metrics over the 14-hour period reveals that GPU utilization remains steady, but GPU memory allocation follows a linear upward slope until it hits the hardware limit. What is the most likely cause?
+Options:
+A. The training batch size is statically set too high for the GPU's total VRAM.
+B. The application code is accumulating PyTorch computational graphs in memory across training steps.
+C. The NVIDIA K8s Device Plugin is failing to enforce memory limits, allowing K8s to evict the pod.
+D. The NVLink interconnect is dropping packets, causing memory buffers to overflow.
+Correct Answer: B
+Explanation:
+A linear, gradual increase in GPU memory over a long duration (a memory leak) in PyTorch is almost always caused by keeping a reference to tensors attached to the computational graph (e.g., appending loss tensors to a Python list for logging without calling .item()). Option A would cause an immediate OOM crash on the very first training step, not after 12 hours. Option C is technically flawed; device plugins map physical devices, they don't dynamically enforce VRAM limits in a way that causes slow leaks. Option D is a hardware/networking issue that results in training hangs or timeouts, not progressive VRAM leaks.
+Difficulty: Hard
+Domain: Incident Response & Troubleshooting
+Cognitive Level: Evaluate
+Scenario Type: Incident
+Question 7:
+You are migrating an AI pipeline to use highly optimized container images from the NVIDIA NGC Private Registry. You have updated your Kubernetes Deployment manifests to point to nvcr.io/my-org/my-model-image:latest. However, when applied, the pods fail to start, showing ErrImagePull and ImagePullBackOff. You can successfully run docker pull for this image on your local workstation. How do you resolve this in K8s?
+Options:
+A. Update the K8s node kubelet configuration to disable TLS verification for nvcr.io.
+B. Create a K8s Secret containing an NGC API Key and add imagePullSecrets to the pod specification.
+C. Ensure the nvidia-container-toolkit is restarted on all worker nodes.
+D. Request the security team to unblock port 443 on the K8s cluster firewall.
+Correct Answer: B
+Explanation:
+To pull images from a private container registry like NGC, Kubernetes requires authentication credentials. These are provided by creating a K8s Secret of type kubernetes.io/dockerconfigjson (using an NGC API key) and referencing it via imagePullSecrets in the Pod spec. Since the engineer can pull the image locally, the registry is up and reachable, ruling out network blocks (Option D). Option A is a security violation and irrelevant since NGC uses valid TLS certs. Option C affects the runtime execution of GPU containers, not the initial image pull process.
+Difficulty: Medium
+Domain: Security & Access Control in AI Systems
+Cognitive Level: Apply
+Scenario Type: Deployment
+Question 8:
+A production recommendation model has been operating continuously for 6 months. Operational metrics (Prometheus) show that latency remains at a steady 25ms, K8s node health is 100%, and GPU utilization is normal. However, the business analytics team reports that the model's click-through prediction accuracy has degraded by 18% over the last month. What is the standard AI Ops lifecycle response to this scenario?
+Options:
+A. Reboot the K8s nodes to clear fragmented GPU memory.
+B. Increase the model instance count in Triton to handle hidden request queuing.
+C. Trigger the MLOps pipeline to retrain the model on recent data to combat data drift.
+D. Upgrade the NVIDIA driver and CUDA version to the latest stable release.
+Correct Answer: C
+Explanation:
+This scenario describes Model/Data Drift. The operational telemetry is perfectly healthy (low latency, normal utilization), but the statistical accuracy of the model has degraded because real-world data distributions have changed over time. The correct lifecycle response is to retrain the model on fresh data. Options A, B, and D address infrastructure, scaling, and software bugs, none of which solve statistical degradation when operational metrics are completely green.
+Difficulty: Easy
+Domain: Model Deployment & Inference Operations
+Cognitive Level: Analyze
+Scenario Type: Monitoring
+Question 9:
+A heavy object detection model (TensorFlow) deployed on Triton has an inference latency of 180ms, violating the 50ms SLA. Nsight Systems profiling reveals that the GPU compute pipelines are saturated with FP32 precision matrix multiplications. You cannot change the hardware or scale horizontally. What is the most effective optimization to meet the latency SLA?
+Options:
+A. Enable K8s GPU time-slicing to allow multiple K8s pods to process requests concurrently.
+B. Export the model to TensorRT and calibrate it to run in FP16 or INT8 precision.
+C. Increase the Triton instance_group count to 4.
+D. Configure dynamic batching with a max_queue_delay_microseconds of 50000.
+Correct Answer: B
+Explanation:
+Converting a heavy FP32 model to TensorRT using lower precision (FP16 or INT8) drastically reduces the computational overhead and memory footprint, massively accelerating inference latency (often 2x to 5x faster) on modern NVIDIA GPUs with Tensor Cores. Option A shares K8s Kubelet resources but does not make a single inference pass faster. Option C increases throughput for concurrent requests but usually slightly increases individual request latency due to context switching if the GPU is already saturated. Option D (Dynamic batching) increases throughput but mathematically increases latency due to queueing.
+Difficulty: Hard
+Domain: Performance Optimization & Scaling
+Cognitive Level: Evaluate
+Scenario Type: Optimization
+Question 10:
+A development team wants to deploy three separate, lightweight Jupyter Notebook K8s pods for exploratory data analysis. The cluster only has older NVIDIA T4 GPUs. You want all three pods to run simultaneously on a single T4 GPU, but MIG is not supported on the Turing architecture. What is the correct NVIDIA-supported approach?
+Options:
+A. Configure the NVIDIA GPU Operator to enable K8s GPU Time-Slicing.
+B. Use NVIDIA vGPU to virtualize the T4 at the hypervisor level for K8s containers.
+C. Configure NVIDIA Multi-Instance GPU (MIG) via the nvidia-smi mig -i 0 -e command.
+D. It is impossible; older GPUs like T4 require exactly 1 GPU per pod.
+Correct Answer: A
+Explanation:
+For GPUs that do not support hardware-level partitioning (MIG), such as the T4, K8s GPU Time-Slicing allows the device plugin to oversubscribe the GPU. It allows multiple pods to share the same physical GPU by time-slicing compute cycles (concurrency), which is ideal for lightweight or dev workloads. Option B is for VM-level virtualization, not K8s container sharing. Option C is factually incorrect as T4 does not support MIG. Option D is incorrect because time-slicing explicitly solves this.
+Difficulty: Medium
+Domain: GPU Resource Management & Scheduling
+Cognitive Level: Analyze
+Scenario Type: Optimization
+Question 11:
+You are troubleshooting a slow PyTorch distributed training workload using NVIDIA Nsight Systems. The profiling timeline shows GPU compute utilization is very low (averaging 35%). However, the CPU utilization is pinned at 98%, and the host-to-device PCIe bus transfer metrics show intermittent but massive spikes causing the GPU to stall and wait. What is the primary bottleneck?
+Options:
+A. The GPU clock frequencies have been thermally throttled.
+B. The K8s cluster network (CNI) bandwidth is insufficient for inter-node communication.
+C. A data loading and pre-processing bottleneck on the CPU is starving the GPU of data.
+D. The model architecture requires too much memory, causing CUDA OOM.
+Correct Answer: C
+Explanation:
+High CPU utilization paired with low GPU compute utilization and intermittent PCIe spikes indicates that the GPU is computing data much faster than the CPU can fetch, augment, and transfer it. The GPU is idling (stalling) while waiting for the next batch. Option A would result in high GPU utilization because the GPU would take longer to compute. Option B would show high network wait times and NCCL stalls, not CPU pinning and host-to-device PCIe spikes. Option D would immediately crash the job with an error, rather than just running slowly.
+Difficulty: Hard
+Domain: Monitoring & Observability
+Cognitive Level: Evaluate
+Scenario Type: Incident
+Question 12:
+You deploy a new K8s deployment for an inference API. You notice the K8s scheduler places the pod on a standard, CPU-only node instead of the nodes configured with NVIDIA GPUs. The K8s cluster has proper taints on the GPU nodes to prevent standard workloads from using them. What did the developer miss in the deployment manifest?
+Options:
+A. The deployment is missing the K8s service account token.
+B. The deployment manifest is missing the correct nodeSelector / nodeAffinity and tolerations for the GPU node taints.
+C. The deployment requested nvidia.com/gpu: 1 but K8s ignored it.
+D. The Triton inference server image lacks the nvidia-smi binary.
+Correct Answer: B
+Explanation:
+In a properly configured K8s cluster, specialized nodes (like GPU nodes) are tainted so generic workloads are not scheduled on them. To place a pod on a tainted node, the pod manifest MUST contain tolerations matching the taint, and usually a nodeSelector or affinity to guide it. Option A is unrelated to scheduling. Option C is incorrect; if nvidia.com/gpu: 1 is requested and no node matches, the pod stays Pending; it does not get scheduled to a CPU node. Option D is irrelevant to K8s scheduling mechanics.
+Difficulty: Easy
+Domain: Kubernetes & Orchestration for AI Workloads
+Cognitive Level: Apply
+Scenario Type: Deployment
+Question 13:
+A cluster administrator applies a strict K8s NetworkPolicy to an AI namespace that denies all ingress and egress traffic by default. They then explicitly allow egress on port 443 to the public internet so pods can download external models. However, distributed K8s training jobs using NCCL now hang indefinitely and fail to synchronize gradients across pods. Why?
+Options:
+A. The NetworkPolicy is blocking inter-pod communication ports required by NCCL (e.g., K8s pod-to-pod CNI traffic).
+B. NCCL requires egress on port 80 (HTTP) to fetch runtime Kubelet network configurations.
+C. The K8s Kubelet is blocking the NVIDIA device plugin from accessing the physical network interfaces.
+D. The NetworkPolicy prevents the K8s API server from authenticating the Kubelet.
+Correct Answer: A
+Explanation:
+Distributed training relies heavily on inter-pod communication for gradient synchronization using NCCL (often over standard TCP/IP or InfiniBand via RoCE). A default-deny NetworkPolicy stops pods from talking to each other across the K8s CNI. Only allowing port 443 out to the internet does not permit the required east-west (pod-to-pod) traffic. Options B, C, and D do not accurately describe NCCL's network behavior or how K8s NetworkPolicies interact with device plugins.
+Difficulty: Medium
+Domain: Security & Access Control in AI Systems
+Cognitive Level: Analyze
+Scenario Type: Incident
+Question 14:
+During a major scale-up event, an AI Operations engineer wants to serve the same transformer model on multiple Triton instances across a K8s cluster. They mount a ReadWriteMany (RWX) NFS volume containing the model repository to all Triton pods. Immediately, inference latency spikes erratically across all instances, and disk I/O metrics on the NFS server max out. What is the most likely cause?
+Options:
+A. The model files are corrupted on the NFS share.
+B. Triton is trying to load the model into GPU memory directly from the network share during every inference request.
+C. Multiple Triton pods are actively writing inference logs or model state to the same NFS directory concurrently.
+D. NFS does not support K8s PersistentVolumeClaims (PVCs).
+Correct Answer: C
+Explanation:
+While Triton can read model repositories from NFS, sharing a single directory where multiple Triton instances might also be configured to write logs, lock files, or state can cause massive I/O contention and lock thrashing. Triton loads models into memory at startup (or dynamically), it does not read the model weights from disk on every request (eliminating Option B). Option A would cause a crash, not a latency spike. Option D is
