@@ -1,0 +1,203 @@
+NVIDIA CERTIFIED PROFESSIONAL \u2013 AI OPERATIONS (AI OPS)
+Exam Question Bank
+DOMAIN 1 \u2013 MODEL DEPLOYMENT & INFERENCE OPERATIONS
+Question 1:
+A production Triton Inference Server instance is serving a BERT-based NLP model. After a recent model update, the operations team notices that P99 latency has increased from 45ms to 210ms. GPU utilization remains at 95%. No configuration changes were made to the server. What is the MOST likely cause?
+Options:
+A. The updated model has a larger parameter count requiring more GPU memory bandwidth
+B. Triton's dynamic batching queue depth is too low for the new model's compute requirements
+C. The model was exported without enabling TensorRT optimization in the new version
+D. The GPU driver version is incompatible with the updated model format
+Correct Answer: C
+Explanation:
+C is correct: When a model update removes or bypasses TensorRT optimization, inference falls back to standard CUDA execution, which is significantly slower. This explains the dramatic latency increase with no change in GPU utilization (GPU is still fully used, just less efficiently).
+A is incorrect: A larger parameter count would increase memory pressure and likely reduce throughput, but would show up as increased memory utilization, not a silent latency regression on its own.
+B is incorrect: Dynamic batching queue depth affects throughput and queuing latency under load, not P99 latency on a model that was previously performing well.
+D is incorrect: A driver incompatibility would typically cause initialization failures or crashes, not a subtle latency regression.
+Difficulty: Medium
+Domain: Model Deployment & Inference Operations
+Cognitive Level: Analyze
+Scenario Type: Incident
+Question 2:
+You are deploying a computer vision model on NVIDIA Triton Inference Server using the model ensemble feature. The pipeline consists of a preprocessing model, an inference model, and a postprocessing model. During load testing, you observe that overall pipeline throughput is 40% lower than expected. The inference model alone achieves the expected throughput in isolation. What should you investigate FIRST?
+Options:
+A. Increase the number of inference model instances in the ensemble
+B. Check whether the preprocessing model is using CPU execution backend instead of GPU
+C. Reduce the max_batch_size setting for the ensemble configuration
+D. Restart Triton with the --pinned-memory-pool-byte-size flag doubled
+Correct Answer: B
+Explanation:
+B is correct: In an ensemble pipeline, a single CPU-bound stage creates a bottleneck that throttles the entire pipeline, even if the GPU inference stage is highly optimized. Preprocessing models that default to the Python backend run on CPU unless explicitly configured for GPU execution.
+A is incorrect: Adding more inference model instances does not help if the bottleneck is in an adjacent pipeline stage. Profiling the bottleneck stage must come first.
+C is incorrect: Reducing max_batch_size would further harm throughput, not improve it.
+D is incorrect: Pinned memory pool size affects CPU-GPU data transfer efficiency, but is not the first diagnostic step for a pipeline throughput issue.
+Difficulty: Medium
+Domain: Model Deployment & Inference Operations
+Cognitive Level: Apply
+Scenario Type: Optimization
+Question 3:
+Your team is deploying a new large language model (LLM) on NVIDIA Triton using the TensorRT-LLM backend. The model requires 70GB of GPU memory. The available nodes have 4x A100 80GB GPUs each. After deployment, inference requests return errors citing insufficient memory. What is the MOST appropriate resolution?
+Options:
+A. Enable model compression using INT4 quantization in the Triton model configuration
+B. Configure tensor parallelism across multiple GPUs using TensorRT-LLM's parallel configuration
+C. Increase the Kubernetes pod memory limit to allow overflow into CPU RAM
+D. Switch the model backend from TensorRT-LLM to the ONNX Runtime backend
+Correct Answer: B
+Explanation:
+B is correct: TensorRT-LLM supports tensor parallelism, which shards the model across multiple GPUs. For a 70GB model on 80GB GPUs, the model fits on a single GPU in theory, but activation memory and KV cache during inference can push usage beyond 80GB. Tensor parallelism across 2 or 4 GPUs resolves this by distributing both weights and activation memory.
+A is incorrect: INT4 quantization reduces model size but requires re-quantizing and re-exporting the model, which is a longer-term remediation, not an immediate deployment fix. Also, it may not be appropriate for all LLMs without accuracy validation.
+C is incorrect: GPU memory cannot overflow into CPU RAM for CUDA operations. Kubernetes memory limits apply to CPU RAM, not GPU VRAM.
+D is incorrect: Switching to ONNX Runtime does not resolve GPU memory constraints; the model weights remain the same size regardless of the inference backend.
+Difficulty: Hard
+Domain: Model Deployment & Inference Operations
+Cognitive Level: Evaluate
+Scenario Type: Deployment
+DOMAIN 2 \u2013 MONITORING & OBSERVABILITY
+Question 4:
+An AI Ops engineer is setting up observability for a Triton Inference Server deployment. They need to detect when the model's prediction confidence distribution shifts significantly compared to the training baseline. Which combination of tools and signals is MOST appropriate for this use case?
+Options:
+A. Prometheus scraping GPU utilization metrics combined with Grafana dashboards
+B. NVIDIA DCGM Exporter tracking SM utilization and memory bandwidth
+C. Custom Triton metrics tracking output tensor statistics combined with a statistical drift detection library
+D. Kubernetes liveness probes monitoring Triton's health endpoint
+Correct Answer: C
+Explanation:
+C is correct: Model drift detection requires monitoring the statistical distribution of model outputs (confidence scores, prediction distributions) over time and comparing them against a baseline. Custom Triton metrics can expose output tensor statistics, which are then fed into drift detection algorithms (e.g., KL divergence, PSI).
+A is incorrect: GPU utilization metrics measure infrastructure health, not model prediction quality. They cannot detect model drift.
+B is incorrect: DCGM metrics are GPU hardware telemetry. SM utilization and memory bandwidth do not reflect anything about model output distributions.
+D is incorrect: Kubernetes liveness probes only verify that the service is running and responding. They cannot assess the quality or statistical properties of predictions.
+Difficulty: Medium
+Domain: Monitoring & Observability
+Cognitive Level: Evaluate
+Scenario Type: Monitoring
+Question 5:
+An AI Ops engineer observes that DCGM Exporter is reporting a sustained GPU_MEMORY_USED value of 98% across all GPUs in a node, while GPU_UTILIZATION hovers at only 22%. No inference errors are being reported. What does this pattern MOST likely indicate?
+Options:
+A. The model is correctly loaded and idle, waiting for inference requests
+B. Multiple models are resident in GPU memory but are not receiving traffic
+C. A memory leak in the inference application is consuming VRAM without performing computation
+D. The GPU has entered a reduced-power state due to thermal throttling
+Correct Answer: B
+Explanation:
+B is correct: High GPU memory utilization with low SM/GPU utilization is the classic signature of multiple models loaded into VRAM in a "warm standby" state. This is common in multi-model serving environments where models are pre-loaded to minimize cold-start latency but are not actively processing requests.
+A is incorrect: A single idle model would show high memory usage proportional to its own footprint, not necessarily 98% across all GPUs. The pattern described is more consistent with multiple resident models.
+C is incorrect: A memory leak is possible but would typically show a gradual increase over time, not a steady state. Additionally, leaks are usually associated with some computational activity.
+D is incorrect: Thermal throttling reduces GPU clock speeds and shows up as reduced performance metrics, not as high memory utilization. DCGM would show temperature and throttle reason fields to confirm this.
+Difficulty: Medium
+Domain: Monitoring & Observability
+Cognitive Level: Analyze
+Scenario Type: Monitoring
+Question 6:
+You are configuring log-based alerting for a production AI inference cluster. Which log signal from Triton Inference Server is MOST critical to monitor for early detection of backend model execution failures that do not crash the server process?
+Options:
+A. tritonserver_request_duration_us histogram metrics
+B. TRITONSERVER_LOG_ERROR entries containing "model execution failed" patterns
+C. Kubernetes pod restart count metrics from kube-state-metrics
+D. NVIDIA GPU Operator DaemonSet status events
+Correct Answer: B
+Explanation:
+B is correct: Triton is designed to be resilient; backend model execution failures are caught and logged as errors without crashing the server. Monitoring TRITONSERVER_LOG_ERROR entries for execution failure patterns enables early detection before client-facing error rates spike visibly in request metrics.
+A is incorrect: Request duration metrics indicate latency but do not distinguish between slow execution and execution failures. A failed request may complete quickly with an error response.
+C is incorrect: Pod restart counts only detect process-level crashes. Triton handles model execution errors internally without restarting.
+D is incorrect: GPU Operator DaemonSet events reflect driver and plugin health at the node level, not model-level execution failures.
+Difficulty: Medium
+Domain: Monitoring & Observability
+Cognitive Level: Apply
+Scenario Type: Incident
+DOMAIN 3 \u2013 PERFORMANCE OPTIMIZATION & SCALING
+Question 7:
+A Triton Inference Server instance is handling image classification requests with an average batch size of 1 (client sends individual requests). GPU utilization is consistently 18%. Latency is acceptable at 12ms. The business requirement changes to maximize throughput to support 10x the current request rate. What is the MOST effective configuration change?
+Options:
+A. Increase the number of Triton server replicas via Kubernetes HPA based on CPU usage
+B. Enable dynamic batching with a preferred_batch_size of 32 and max_queue_delay_microseconds of 5000
+C. Switch the model format from TensorRT to ONNX to reduce serialization overhead
+D. Increase the GPU memory limit in the Triton pod spec to allow larger model caching
+Correct Answer: B
+Explanation:
+B is correct: When clients send individual requests and GPU utilization is low (18%), the GPU is being underutilized between requests. Dynamic batching groups multiple incoming requests into a single larger inference batch, dramatically improving GPU utilization and throughput. A preferred_batch_size of 32 with a small queue delay is the standard pattern for throughput optimization.
+A is incorrect: Scaling replicas based on CPU usage is the wrong signal for GPU inference workloads. Additionally, scaling horizontally without fixing the batching efficiency would multiply the underutilization across more instances.
+C is incorrect: Switching from TensorRT to ONNX would actually reduce performance, as TensorRT is the highest-performance backend for NVIDIA GPUs.
+D is incorrect: Memory limits do not affect throughput or batching behavior. The bottleneck is batching efficiency, not memory capacity.
+Difficulty: Easy
+Domain: Performance Optimization & Scaling
+Cognitive Level: Apply
+Scenario Type: Optimization
+Question 8:
+An operations team is running a large recommendation model on an A100 80GB GPU. The model uses 35GB of VRAM. The team wants to co-locate a second, smaller model (8GB VRAM) on the same GPU to improve hardware utilization. After attempting to schedule both pods, the second model's pod fails to start with an "insufficient GPU resources" error. What is the MOST likely cause?
+Options:
+A. The GPU Operator version does not support multi-tenancy on A100 GPUs
+B. The cluster is not configured to use GPU sharing via MIG or time-slicing, so the GPU appears as a single non-divisible resource
+C. The A100 GPU's NVLINK bandwidth is saturated by the first model's memory transfers
+D. CUDA context switching overhead prevents two models from sharing the same physical GPU
+Correct Answer: B
+Explanation:
+B is correct: By default, Kubernetes treats each GPU as an indivisible unit. A GPU can only be allocated to one pod at a time unless MIG (Multi-Instance GPU) or GPU time-slicing is explicitly configured. Since both models together (43GB) fit within 80GB, the hardware can support co-location, but the scheduler does not allow it without explicit sharing configuration.
+A is incorrect: The GPU Operator supports MIG and time-slicing on A100 GPUs. The issue is not operator version incompatibility.
+C is incorrect: NVLINK bandwidth saturation would appear as performance degradation in a running workload, not as a scheduling failure.
+D is incorrect: CUDA does support multiple contexts on a single GPU, which is the basis for time-slicing. Context switching exists but is not a barrier to scheduling.
+Difficulty: Medium
+Domain: Performance Optimization & Scaling
+Cognitive Level: Analyze
+Scenario Type: Deployment
+Question 9:
+You are tasked with reducing inference latency for a real-time fraud detection model from 8ms to under 3ms on an NVIDIA A30 GPU. The model is currently running as FP32. Which sequence of optimizations should be attempted in order of expected impact, from highest to lowest?
+Options:
+A. Enable FP16 precision \u2192 Apply TensorRT engine optimization \u2192 Enable CUDA graphs
+B. Increase Kubernetes CPU limits \u2192 Enable FP16 precision \u2192 Apply TensorRT optimization
+C. Apply TensorRT engine optimization \u2192 Enable INT8 calibration \u2192 Increase GPU clock speeds
+D. Enable CUDA graphs \u2192 Increase batch size \u2192 Switch to FP16 precision
+Correct Answer: A
+Explanation:
+A is correct: The optimization sequence follows maximum impact order. FP16 halves memory bandwidth requirements and doubles tensor core throughput with minimal accuracy loss. TensorRT fuses operations, selects optimal kernels, and applies layer-level optimizations. CUDA graphs eliminate CPU-side kernel launch overhead, which is the remaining bottleneck for ultra-low latency workloads.
+B is incorrect: Increasing CPU limits does not affect GPU inference latency. CPU resources govern orchestration and data preprocessing, not GPU compute paths.
+C is incorrect: INT8 calibration requires a calibration dataset and validation step to confirm accuracy preservation. It should not be the first optimization attempted for a latency-sensitive fraud detection model due to accuracy risk. Also, GPU clock speed adjustments are a hardware-level intervention, not an application-level optimization.
+D is incorrect: Increasing batch size typically increases latency for individual requests (though it increases throughput). This is the wrong trade-off for a real-time latency target.
+Difficulty: Hard
+Domain: Performance Optimization & Scaling
+Cognitive Level: Evaluate
+Scenario Type: Optimization
+DOMAIN 4 \u2013 INCIDENT RESPONSE & TROUBLESHOOTING
+Question 10:
+A production model serving cluster begins returning HTTP 503 errors for 15% of requests. Kubernetes shows all Triton pods as Running and Ready. GPU utilization is at 100%. Average latency has jumped from 80ms to 4200ms. What is the MOST appropriate immediate incident response action?
+Options:
+A. Restart all Triton pods to clear any stuck requests
+B. Trigger horizontal scale-out by increasing the Triton deployment replica count to reduce per-pod load
+C. Reduce the Triton model's max_batch_size to lower per-request compute time
+D. Switch from the TensorRT backend to ONNX Runtime to reduce GPU computation overhead
+Correct Answer: B
+Explanation:
+B is correct: 100% GPU utilization with massively elevated latency and 503 errors indicates the cluster is saturated \u2014 demand is exceeding serving capacity. The immediate response is to scale out (add replicas) to distribute load. All pods are healthy, so this is a capacity problem, not a software fault.
+A is incorrect: Restarting pods during a traffic saturation incident would temporarily remove capacity, worsening the 503 error rate during restart cycles.
+C is incorrect: Reducing max_batch_size would reduce per-batch latency marginally but would also reduce throughput per GPU, which is counterproductive when the GPU is already the bottleneck.
+D is incorrect: Switching backends during a production incident is a dangerous, slow operation with no immediate latency benefit. ONNX Runtime typically performs worse than TensorRT on NVIDIA GPUs.
+Difficulty: Easy
+Domain: Incident Response & Troubleshooting
+Cognitive Level: Apply
+Scenario Type: Incident
+Question 11:
+An AI operations engineer receives an alert that a Triton pod has been OOMKilled three times in the past hour. The model being served is unchanged. DCGM metrics show GPU memory utilization at 78%, which is normal. The pod's Kubernetes memory limit is set to 8Gi. What is the MOST likely root cause?
+Options:
+A. The GPU model weights are overflowing into CPU RAM, causing system memory exhaustion
+B. Triton's CPU-side request preprocessing buffers are accumulating due to a client sending large input payloads without rate limiting
+C. The Kubernetes memory limit is constraining GPU VRAM allocation
+D. DCGM Exporter is consuming excess memory within the same pod, competing with Triton
+Correct Answer: B
+Explanation:
+B is correct: OOMKill is a CPU RAM event, not a GPU VRAM event. Triton allocates CPU memory for request preprocessing, response buffers, and input/output tensors before and after GPU execution. Large or high-frequency input payloads (e.g., high-resolution images, long sequences) can exhaust the pod's CPU memory limit (8Gi), triggering OOMKill even when GPU memory is fine.
+A is incorrect: GPU model weights do not "overflow" into CPU RAM under normal operation. This would be an explicit configuration choice (unified memory), not an automatic behavior.
+C is incorrect: Kubernetes memory limits apply to CPU RAM only, not GPU VRAM. GPU memory is managed entirely by the CUDA driver outside of the cgroup memory accounting.
+D is incorrect: DCGM Exporter runs as a separate DaemonSet pod, not within the Triton pod. It would not consume memory within Triton's pod memory limit.
+Difficulty: Hard
+Domain: Incident Response & Troubleshooting
+Cognitive Level: Analyze
+Scenario Type: Incident
+Question 12:
+After a routine NGC container image upgrade for a Triton deployment, a specific model begins failing with "TensorRT engine version mismatch" errors. Other models on the same server are unaffected. What is the correct remediation?
+Options:
+A. Roll back the NGC container image to the previous version
+B. Re-export and re-optimize the failing model's TensorRT engine using the TensorRT version bundled in the new container
+C. Increase the Triton server's --model-load-thread-count to allow the engine to retry loading
+D. Convert the model from TensorRT plan format to ONNX format to avoid version dependency
+Correct Answer: B
+Explanation:
+B is correct: TensorRT engine plans are not portable across TensorRT versions. When the Triton container is upgraded, the bundled TensorRT version changes, and previously compiled .plan files become invalid. The correct fix is to regenerate the engine using trtexec or the TensorRT Python API within the new container environment
