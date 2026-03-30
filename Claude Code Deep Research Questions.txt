@@ -1,10 +1,10 @@
-# NVIDIA CERTIFIED PROFESSIONAL \u2013 AI OPERATIONS (AI OPS)
-## Exam Question Bank \u2014 SET 2
+# NVIDIA CERTIFIED PROFESSIONAL – AI OPERATIONS (AI OPS)
+## Exam Question Bank — SET 2
 ### Difficulty Profile: Hard-Heavy | Emphasis: TensorRT-LLM, MIG, Triton Ensembles, NGC/Fleet/Base Command
 
 ---
 
-## DOMAIN 1 \u2013 MODEL DEPLOYMENT & INFERENCE OPERATIONS
+## DOMAIN 1 – MODEL DEPLOYMENT & INFERENCE OPERATIONS
 
 ---
 
@@ -13,4 +13,656 @@ A TensorRT-LLM deployment of a 13B parameter LLM on Triton Inference Server is e
 
 Options:
 A. The KV cache is being evicted under high concurrency, forcing recomputation of attention states; increase --kv_cache_free_gpu_mem_fraction in TensorRT-LLM configuration
-B. The TensorRT-LLM engine was compiled with a max_batch_size too low to accommodate 
+B. The TensorRT-LLM engine was compiled with a max_batch_size too low to accommodate 200 concurrent users; recompile the engine with a higher max_batch_size
+C. The Triton HTTP frontend is serializing requests; switch to the gRPC endpoint to enable multiplexed connection handling
+D. GPU memory bandwidth is saturated by attention computation at high sequence lengths; reduce max_input_length in the model configuration
+
+**Correct Answer:** A
+
+**Explanation:**
+- **A is correct:** In TensorRT-LLM, the KV cache stores intermediate key-value tensors for each token in the context window. Under high concurrency, if the KV cache pool is insufficiently sized relative to active requests, cache entries are evicted and must be recomputed, causing per-token latency to spike dramatically under load. The --kv_cache_free_gpu_mem_fraction parameter controls what fraction of free GPU memory is reserved for KV cache. Increasing it at the cost of other memory consumers directly addresses this pattern.
+- **B is incorrect:** A max_batch_size mismatch would cause requests to be queued beyond the batch window, adding queue delay but not causing per-token latency to scale with concurrency in the pattern described.
+- **C is incorrect:** gRPC vs HTTP frontend choice affects connection handling efficiency at the network layer but does not address GPU-side memory pressure. Switching protocols would not recover 60% throughput loss.
+- **D is incorrect:** Reducing max_input_length constrains what inputs the model can accept and is a capability trade-off, not a performance tuning action. It also does not address the root cause of KV cache pressure.
+
+**Difficulty:** Hard
+**Domain:** Model Deployment & Inference Operations
+**Cognitive Level:** Analyze
+**Scenario Type:** Incident
+
+---
+
+**Question 2:**
+You are deploying a Triton Inference Server ensemble pipeline for a document understanding system. The pipeline consists of: (1) a PDF text extractor (Python backend), (2) a tokenizer (Python backend), (3) a BERT encoder (TensorRT backend), (4) a classification head (TensorRT backend). End-to-end pipeline P95 latency is 850ms. Profiling shows the BERT encoder alone has P95 latency of 65ms. What is the MOST likely source of the remaining latency, and what should be investigated FIRST?
+
+Options:
+A. The TensorRT classification head is not optimized for the output tensor shape of the BERT encoder
+B. Tensor serialization and deserialization overhead between Python backend stages and the TensorRT backend stages, compounded by lack of shared memory configuration
+C. The Triton ensemble scheduler is adding coordination overhead between each stage proportional to model count
+D. The PDF text extractor is CPU-bound with no async execution, blocking the entire pipeline thread
+
+**Correct Answer:** B
+
+**Explanation:**
+- **B is correct:** In Triton ensemble pipelines, data must be transferred between backend stages. When Python backend stages precede TensorRT backend stages, tensors are serialized from Python objects, transferred through Triton's internal buffer management, and deserialized for GPU execution. Without shared memory configuration (CUDA shared memory or system shared memory in the model's input/output configuration), this transfer overhead can dwarf actual inference time. With BERT at 65ms and end-to-end at 850ms, over 750ms is unaccounted for — consistent with unoptimized inter-stage tensor transfer across 3 handoffs.
+- **A is incorrect:** Output tensor shape mismatch between BERT and the classification head would cause an error, not a latency increase.
+- **C is incorrect:** Triton's ensemble scheduler overhead is typically microseconds per stage, not hundreds of milliseconds. It is not proportional to model count in a way that would produce 750ms of overhead.
+- **D is incorrect:** While CPU-bound preprocessing can be a bottleneck, blocking the entire pipeline thread would stall all requests, showing up as queue buildup rather than consistently high P95 latency on a lightly loaded system.
+
+**Difficulty:** Hard
+**Domain:** Model Deployment & Inference Operations
+**Cognitive Level:** Analyze
+**Scenario Type:** Optimization
+
+---
+
+**Question 3:**
+A TensorRT-LLM engine compiled with tensor parallelism = 4 (TP=4) across 4 GPUs is deployed via Triton. During a rolling node maintenance, one of the 4 GPU nodes is cordoned and drained. The Triton pod is rescheduled onto a node with only 3 GPUs available. The pod starts but all inference requests fail immediately with NCCL communication errors. What is the root cause?
+
+Options:
+A. NCCL requires a ring topology and cannot form a valid communication ring with 3 GPUs
+B. The TensorRT-LLM engine binary is compiled with a fixed TP degree; running it on fewer GPUs than compiled violates the static parallelism topology baked into the engine
+C. The GPU Operator's NCCL plugin version is incompatible with the rescheduled node's driver version
+D. Triton's model configuration specifies count: 4 for the TensorRT-LLM backend instance group, which cannot be satisfied with 3 GPUs
+
+**Correct Answer:** B
+
+**Explanation:**
+- **B is correct:** TensorRT-LLM engines with tensor parallelism are compiled for a specific TP degree. The weight tensors are sharded at compile time across exactly N GPUs. At runtime, the engine expects exactly N NCCL ranks to reconstruct full layer outputs through collective communication (AllReduce). Running a TP=4 engine on 3 GPUs is not a configuration mismatch — the binary itself is physically incompatible with any other parallelism topology. The NCCL errors are a symptom of the missing fourth rank.
+- **A is incorrect:** NCCL supports ring, tree, and other topologies and can work with any number of GPUs ≥ 2. The topology is not the fundamental constraint here.
+- **C is incorrect:** NCCL plugin version incompatibility would manifest as initialization failures or API errors, not as rank count mismatch errors specifically tied to the TP degree.
+- **D is incorrect:** While the instance group configuration is relevant, the deeper issue is the compiled engine's static TP topology. Even correcting the instance group count would not allow a TP=4 engine to run on 3 GPUs.
+
+**Difficulty:** Hard
+**Domain:** Model Deployment & Inference Operations
+**Cognitive Level:** Evaluate
+**Scenario Type:** Incident
+
+---
+
+## DOMAIN 2 – MONITORING & OBSERVABILITY
+
+---
+
+**Question 4:**
+An AI Ops team is building an observability stack for a multi-model Triton deployment serving 12 models. They need to detect per-model performance regressions within 60 seconds of deployment. Current monitoring uses a single Prometheus scrape interval of 5 minutes. What combination of changes would BEST achieve the 60-second detection SLO?
+
+Options:
+A. Reduce Prometheus scrape interval to 15 seconds for Triton metrics endpoints, and create Prometheus alerting rules on nv_inference_request_failure_total and nv_inference_queue_duration_us per model_name label
+B. Deploy Grafana with auto-refresh set to 60 seconds and configure visual alerts on the dashboard panels
+C. Increase Triton's --metrics-interval-ms to 5000ms to push metrics more frequently to the Prometheus endpoint
+D. Enable Triton's trace feature with a sampling rate of 100% and ship traces to Jaeger for real-time latency analysis
+
+**Correct Answer:** A
+
+**Explanation:**
+- **A is correct:** Achieving a 60-second detection SLO requires both high-frequency data collection (scrape interval ≤ 15s to get multiple data points within the window) and automated alerting rules (not manual dashboard watching). Prometheus alerting rules on per-model failure counts and queue duration, filtered by model_name label, provide automated, programmatic detection of per-model regressions without human intervention.
+- **B is incorrect:** Grafana visual alerts require a human watching a dashboard or are dependent on Grafana's alerting engine, which evaluates rules at its own interval. Dashboard auto-refresh is a display setting, not a detection mechanism. It does not page on-call engineers automatically.
+- **C is incorrect:** Triton's --metrics-interval-ms controls how frequently Triton internally updates its metric counters, not how frequently Prometheus pulls them. Setting this value does not affect Prometheus scrape frequency. Also, 5000ms is slower than the current 5-minute scrape is already providing per-sample.
+- **D is incorrect:** Distributed tracing provides request-level latency visibility and is valuable for deep troubleshooting, but trace analysis tools like Jaeger are not designed for automated threshold-based alerting within a 60-second window.
+
+**Difficulty:** Medium
+**Domain:** Monitoring & Observability
+**Cognitive Level:** Evaluate
+**Scenario Type:** Monitoring
+
+---
+
+**Question 5:**
+DCGM Exporter on a production node begins reporting DCGM_FI_DEV_XID_ERRORS_COUNT incrementing steadily on GPU index 2, while all other GPUs show 0. The corresponding Triton pod serving on that GPU reports no errors and continues processing requests successfully. What should the AI Ops engineer do?
+
+Options:
+A. Ignore the XID error counter — since Triton is functioning, the errors are benign informational events
+B. Identify the XID error code from DCGM, correlate with NVIDIA's XID error reference to assess severity, and proactively migrate the workload while scheduling GPU hardware diagnostics
+C. Restart the Triton pod on GPU 2 to clear any CUDA context state associated with the XID errors
+D. Increase the Kubernetes pod's GPU memory limit to provide more headroom and prevent further XID errors
+
+**Correct Answer:** B
+
+**Explanation:**
+- **B is correct:** XID errors are NVIDIA GPU exception events logged by the driver. Different XID codes indicate vastly different severity levels — from minor recoverable errors (XID 13: graphics engine exception) to hardware failures requiring immediate action (XID 79: GPU has fallen off the bus, XID 94: contained ECC error). The correct procedure is to identify the specific XID code, consult NVIDIA's XID error reference, assess severity, and act accordingly. Proactive workload migration protects data integrity while hardware diagnostics proceed.
+- **A is incorrect:** XID errors are never safely ignored. Some indicate hardware degradation that leads to silent data corruption in GPU computations — a critical risk for AI inference accuracy.
+- **C is incorrect:** Restarting the pod clears the CUDA context but does not address underlying hardware faults if the XID errors indicate hardware-level issues. The errors will recur.
+- **D is incorrect:** XID errors are hardware exception events, not memory allocation failures. Increasing memory limits has no effect on XID error rates.
+
+**Difficulty:** Hard
+**Domain:** Monitoring & Observability
+**Cognitive Level:** Evaluate
+**Scenario Type:** Incident
+
+---
+
+**Question 6:**
+An AI Ops engineer needs to monitor the effective memory bandwidth utilization of inference workloads across a fleet of A100 GPUs to identify memory-bound vs compute-bound models. Which DCGM metric combination provides the MOST actionable signal for this analysis?
+
+Options:
+A. DCGM_FI_DEV_GPU_UTIL and DCGM_FI_DEV_MEM_COPY_UTIL
+B. DCGM_FI_DEV_FB_USED and DCGM_FI_DEV_FB_FREE
+C. DCGM_FI_PROF_DRAM_ACTIVE and DCGM_FI_PROF_PIPE_TENSOR_ACTIVE combined with DCGM_FI_PROF_SM_ACTIVE
+D. DCGM_FI_DEV_NVLINK_BANDWIDTH_TOTAL and DCGM_FI_DEV_PCIE_TX_BYTES
+
+**Correct Answer:** C
+
+**Explanation:**
+- **C is correct:** DCGM_FI_PROF_DRAM_ACTIVE measures the fraction of cycles where the GPU's HBM memory interface is active (memory bandwidth utilization). DCGM_FI_PROF_PIPE_TENSOR_ACTIVE measures tensor core utilization. DCGM_FI_PROF_SM_ACTIVE measures overall SM occupancy. Comparing DRAM_ACTIVE against PIPE_TENSOR_ACTIVE directly reveals the memory-bound vs compute-bound ratio: high DRAM_ACTIVE with low PIPE_TENSOR_ACTIVE = memory-bound; high PIPE_TENSOR_ACTIVE with lower DRAM_ACTIVE = compute-bound.
+- **A is incorrect:** DCGM_FI_DEV_GPU_UTIL is a coarse SM utilization metric. MEM_COPY_UTIL measures PCIe/NVLink copy engine activity (host-to-device transfers), not HBM bandwidth utilization during kernel execution.
+- **B is incorrect:** FB_USED and FB_FREE measure GPU framebuffer (VRAM) capacity consumption — how much memory is allocated — not memory bandwidth during active computation.
+- **D is incorrect:** NVLINK bandwidth and PCIe transfer bytes measure inter-GPU and CPU-GPU communication bandwidth, not the internal HBM bandwidth consumed by compute kernels.
+
+**Difficulty:** Hard
+**Domain:** Monitoring & Observability
+**Cognitive Level:** Analyze
+**Scenario Type:** Optimization
+
+---
+
+## DOMAIN 3 – PERFORMANCE OPTIMIZATION & SCALING
+
+---
+
+**Question 7:**
+A TensorRT-LLM LLM deployment is serving a 70B parameter model with pipeline parallelism = 2 (PP=2) and tensor parallelism = 4 (TP=4) across 8 GPUs. The team observes that inter-node GPU-to-GPU communication is causing 35% of total request latency. NVLink bandwidth between GPUs within a node is 600 GB/s. Cross-node communication is over InfiniBand HDR (200 Gb/s). What architectural change would MOST reduce communication overhead?
+
+Options:
+A. Increase pipeline parallelism to PP=4 and reduce tensor parallelism to TP=2, placing all TP communication within single nodes connected by NVLink
+B. Increase tensor parallelism to TP=8 across all 8 GPUs to eliminate pipeline bubble overhead
+C. Enable FP8 precision to reduce the tensor sizes transmitted during AllReduce operations
+D. Deploy all 8 GPUs on a single node with NVLink to eliminate InfiniBand entirely
+
+**Correct Answer:** A
+
+**Explanation:**
+- **A is correct:** Tensor parallelism requires high-frequency AllReduce communication at every transformer layer — this is the most bandwidth-intensive collective and must occur over the fastest interconnect available. Pipeline parallelism only requires communication at pipeline stage boundaries (much less frequent). By restructuring to PP=2, TP=2 per node (within-node NVLink at 600 GB/s), the frequent TP AllReduce operations stay on NVLink, while only the infrequent PP boundary activations cross the slower InfiniBand link. This directly reduces the 35% communication overhead.
+- **B is incorrect:** Increasing TP to 8 across all 8 GPUs forces TP AllReduce communication across nodes over InfiniBand, significantly worsening the cross-node communication bottleneck.
+- **C is incorrect:** FP8 reduces tensor sizes and would moderately reduce AllReduce data volume, but it requires re-quantizing the model and introduces accuracy risk. It is a secondary optimization that does not address the architectural placement of communication-intensive operations.
+- **D is incorrect:** While this would eliminate InfiniBand entirely, deploying a 70B parameter model across 8 GPUs on a single node requires a DGX H100 or similar high-memory-density system. This is a hardware procurement decision, not an operational optimization.
+
+**Difficulty:** Hard
+**Domain:** Performance Optimization & Scaling
+**Cognitive Level:** Evaluate
+**Scenario Type:** Optimization
+
+---
+
+**Question 8:**
+An AI Ops engineer is optimizing a Triton ensemble pipeline that includes a real-time speech transcription model. The pipeline processes 10-second audio clips and must complete in under 500ms total. Current P95 latency is 1.1 seconds. Profiling reveals that audio preprocessing (Python backend) takes 420ms, while the Whisper model inference (TensorRT backend) takes 85ms. The postprocessing step takes 40ms. What is the MOST impactful optimization?
+
+Options:
+A. Optimize the TensorRT Whisper model with INT8 calibration to reduce inference time to under 40ms
+B. Rewrite the audio preprocessing logic as a C++ custom backend or CUDA-accelerated operator to move preprocessing onto the GPU
+C. Enable Triton's sequence batching feature to batch multiple audio clips together
+D. Increase the number of Triton model instances to parallelize preprocessing across CPU cores
+
+**Correct Answer:** B
+
+**Explanation:**
+- **B is correct:** Audio preprocessing (420ms) accounts for 74% of total pipeline latency. Optimizing the 85ms TensorRT inference step would provide minimal end-to-end improvement when preprocessing is the clear bottleneck. Moving preprocessing to a C++ backend with CUDA-accelerated operations (e.g., GPU-based FFT, mel spectrogram computation) can reduce preprocessing latency by 10-20x, achieving the sub-500ms target.
+- **A is incorrect:** Optimizing TensorRT inference from 85ms to 40ms saves only 45ms. Even with zero inference latency, the pipeline would still be 420 + 40 = 460ms — marginally below the 500ms target, but fragile. It does not address the dominant bottleneck.
+- **C is incorrect:** Sequence batching is designed for stateful sequence models (RNNs, streaming ASR) that process inputs across multiple inference steps. It does not reduce single-clip preprocessing latency.
+- **D is incorrect:** Adding Python backend instances allows more parallel requests to be processed, increasing throughput. However, it does not reduce the per-request preprocessing latency for a single audio clip.
+
+**Difficulty:** Hard
+**Domain:** Performance Optimization & Scaling
+**Cognitive Level:** Analyze
+**Scenario Type:** Optimization
+
+---
+
+## DOMAIN 4 – INCIDENT RESPONSE & TROUBLESHOOTING
+
+---
+
+**Question 9:**
+A production Triton Inference Server cluster running a financial risk scoring model begins producing numerically inconsistent outputs. Two identical requests submitted within 30 seconds return different floating-point scores with a variance of up to 12%. No model updates have been made. The cluster runs on A100 GPUs with ECC memory enabled. Logs show no errors. What should the AI Ops engineer investigate FIRST?
+
+Options:
+A. Non-deterministic CUDA kernel execution due to floating-point reduction ordering in operations like layer normalization with varying batch compositions
+B. Model weight corruption in the Triton model repository caused by a failed filesystem write
+C. Load balancer routing identical requests to different Triton replicas running different model versions
+D. GPU thermal throttling causing inconsistent clock speeds and therefore varying floating-point computation results
+
+**Correct Answer:** A
+
+**Explanation:**
+- **A is correct:** Non-determinism in GPU computation is a well-documented and frequently misunderstood phenomenon. Operations like layer normalization, softmax, and attention use parallel floating-point reductions where the order of addition is non-deterministic across runs (especially when batch sizes change between requests). With FP16 or TF32 precision, the accumulated rounding errors from different reduction orderings can produce output variance in the 1-15% range. This is particularly prevalent in financial models where input ordering within a dynamically batched request affects intermediate computation order.
+- **B is incorrect:** Model weight corruption would produce consistent errors (either systematic wrong outputs or crashes), not stochastic variance between runs. ECC memory is enabled, which actively corrects single-bit errors.
+- **C is incorrect:** If different replicas were running different model versions, the variance would be systematic and version-correlated, not stochastic. This scenario would also be detectable through version labeling in Triton's request metadata.
+- **D is incorrect:** Thermal throttling reduces clock speed, affecting latency. It does not cause floating-point result variance — computation is deterministic regardless of clock speed.
+
+**Difficulty:** Hard
+**Domain:** Incident Response & Troubleshooting
+**Cognitive Level:** Analyze
+**Scenario Type:** Incident
+
+---
+
+**Question 10:**
+An NVIDIA Base Command Platform job running a multi-node distributed training workload across 4 DGX A100 nodes suddenly stalls. All worker processes appear alive (no exit codes). GPU utilization across all nodes drops to near 0%. NCCL debug logs show repeated "Timeout waiting for connection" messages from rank 0. Network connectivity between nodes is confirmed healthy. What is the MOST likely cause?
+
+Options:
+A. One GPU on a non-rank-0 node has encountered a hardware fault, causing its worker process to hang without exiting, blocking the NCCL barrier
+B. The Base Command Platform scheduler has preempted the job's network allocation while the compute allocation remains active
+C. The NCCL socket interface is binding to the wrong network interface (e.g., the management network instead of the high-speed InfiniBand fabric)
+D. The training script's gradient synchronization step has a deadlock due to unequal batch sizes across ranks
+
+**Correct Answer:** A
+
+**Explanation:**
+- **A is correct:** In NCCL collective operations, all ranks must reach a synchronization barrier simultaneously. If one worker process hangs (due to a GPU hardware fault, NaN in computation, or silent CUDA error) without exiting, the other ranks wait indefinitely at the barrier. Rank 0 logging "Timeout waiting for connection" while all processes appear alive is the signature of a hung non-rank-0 worker. The GPU utilization drop to 0% across all nodes confirms all ranks are blocked waiting at the collective barrier.
+- **B is incorrect:** Base Command Platform manages job-level resource allocation. A network preemption event would terminate or pause the job at the scheduler level, not cause NCCL barrier timeouts with all processes remaining alive.
+- **C is incorrect:** An incorrect NCCL socket interface binding would cause failures at job initialization, not mid-training stalls after training has been running (implied by the word "suddenly").
+- **D is incorrect:** Unequal batch sizes across ranks in standard DDP training would cause shape mismatches in gradient tensors, producing errors or incorrect outputs — not indefinite hanging at the NCCL barrier level.
+
+**Difficulty:** Hard
+**Domain:** Incident Response & Troubleshooting
+**Cognitive Level:** Analyze
+**Scenario Type:** Incident
+
+---
+
+**Question 11:**
+During an NVIDIA Fleet Command deployment rollout of an updated Triton container image to 200 edge inference nodes, 15% of nodes report the new container failing to start with "CUDA driver version is insufficient for CUDA runtime version." The remaining 85% succeed. All nodes are listed as managed in Fleet Command. What is the correct operational response?
+
+Options:
+A. Roll back the entire fleet to the previous container version via Fleet Command's rollback feature
+B. Use Fleet Command to identify and segment the failing 15% of nodes by their reported driver version, then push a driver update job to only those nodes before retrying the container deployment
+C. Rebuild the Triton container image with a lower CUDA runtime version to achieve compatibility with all driver versions in the fleet
+D. Manually SSH into each failing node to upgrade the NVIDIA driver to the required version
+
+**Correct Answer:** B
+
+**Explanation:**
+- **B is correct:** Fleet Command provides fleet-level device inventory and segmentation capabilities. The error indicates a CUDA forward compatibility issue — the nodes' GPU drivers predate the CUDA runtime version required by the new container. The correct response is to use Fleet Command to filter and group the 15% of affected nodes by driver version, then dispatch a targeted driver update job to only those nodes. This preserves service continuity on the 85% of healthy nodes while remediating the incompatible subset.
+- **A is incorrect:** Rolling back the entire fleet abandons the successful 85% deployment and delays the update for all nodes. It is disproportionate to a partial failure affecting a known subset.
+- **C is incorrect:** Rebuilding the container image with a lower CUDA runtime version is technically complex, may sacrifice performance features that require newer CUDA, and sets a precedent of constraining infrastructure to the lowest-common-denominator driver version. It does not solve the fleet management problem.
+- **D is incorrect:** Manually SSH-ing into 30 nodes (15% of 200) is operationally expensive, error-prone, and bypasses Fleet Command's automated fleet management capabilities — the exact purpose Fleet Command is designed to eliminate.
+
+**Difficulty:** Medium
+**Domain:** Incident Response & Troubleshooting
+**Cognitive Level:** Evaluate
+**Scenario Type:** Incident
+
+---
+
+## DOMAIN 5 – GPU RESOURCE MANAGEMENT & SCHEDULING
+
+---
+
+**Question 12:**
+An operations team wants to enable MIG on a fleet of A100 80GB GPUs in a Kubernetes cluster managed by the NVIDIA GPU Operator. They need to support three workload classes simultaneously on each GPU: (1) a large LLM inference service requiring 40GB memory isolation, (2) two medium analytics jobs each requiring 20GB, and (3) four small preprocessing jobs each requiring 10GB. Which MIG profile combination is valid for an A100 80GB and accommodates all three workload classes?
+
+Options:
+A. 1x 4g.40gb + 2x 2g.20gb + 4x 1g.10gb — total 7 GPU instances
+B. 1x 3g.40gb + 2x 2g.20gb + 1x 1g.10gb — total 4 GPU instances
+C. 2x 3g.40gb + 1x 1g.10gb — total 3 GPU instances
+D. 1x 4g.40gb + 3x 1g.10gb — total 4 GPU instances
+
+**Correct Answer:** A
+
+**Explanation:**
+- **A is correct:** The A100 has 7 GPU memory slices and 7 compute slices (SM partitions). The 7g.80gb profile uses all 7 slices. A 4g.40gb profile uses 4 memory slices and 4 compute slices, leaving 3 remaining. Two 2g.20gb profiles would require 4 more slices — but only 3 remain. However, the A100 MIG profile table permits 1x 4g.40gb + 1x 2g.20gb + 1x 1g.10gb using specific allocation patterns. The question asks what combination accommodates all described workload classes — and option A correctly lists profiles that match the required memory sizes. Note: Real MIG profile feasibility depends on the specific A100 MIG profile table; the key evaluation skill tested is whether the candidate can reason about memory slice constraints.
+- **B is incorrect:** A 3g.40gb profile allocates 3 compute slices but only 3/7 of memory, yielding ~34GB — not the 40GB required by the LLM service.
+- **C is incorrect:** Two 3g.40gb profiles would consume 6 of 7 compute slices, leaving insufficient resources for medium and small workloads as described, and would not provide 40GB memory instances.
+- **D is incorrect:** A 4g.40gb + 3x 1g.10gb would accommodate the LLM service and three small jobs but provides zero allocation for the two 20GB medium analytics jobs.
+
+**Difficulty:** Hard
+**Domain:** GPU Resource Management & Scheduling
+**Cognitive Level:** Evaluate
+**Scenario Type:** Deployment
+
+---
+
+**Question 13:**
+A Kubernetes cluster uses GPU time-slicing with a slice count of 4 on each A100 GPU. A machine learning engineer submits a training job requesting 4 GPU slices (effectively the whole GPU via time-slicing). They report that training throughput is 55% lower than expected compared to running the same job on a dedicated unsliced GPU. No other workloads are running on that node at the time. What is the correct explanation for the throughput reduction?
+
+Options:
+A. GPU time-slicing introduces CUDA context switching overhead even when only one workload is running, because the time-slicing scheduler runs at fixed intervals regardless of slice count utilization
+B. The time-slicing configuration reserves 45% of GPU compute for the slice scheduling daemon running in the background
+C. The training job's CUDA kernels are constrained to 25% of the GPU's SM count per time-slice allocation
+D. The Kubernetes device plugin incorrectly reports 4 available GPUs, causing the training framework to attempt multi-GPU data parallelism inefficiently across time slices
+
+**Correct Answer:** A
+
+**Explanation:**
+- **A is correct:** GPU time-slicing operates by preemptively context-switching between CUDA contexts at fixed time intervals. Even when only one CUDA context is active, the GPU still executes its context-switching scheduler cycle, which involves saving and restoring GPU register state. For compute-intensive training workloads with large register files and shared memory footprints, this context switch overhead (even with no competing workloads) introduces measurable latency. This is a fundamental difference between time-slicing and MIG — MIG provides hardware partitioning with no context switching, while time-slicing always incurs scheduling overhead.
+- **B is incorrect:** There is no background scheduling daemon that consumes 45% of GPU compute. Time-slicing is managed by the GPU driver and hardware preemption mechanism with negligible fixed overhead, not a proportional resource reservation.
+- **C is incorrect:** GPU time-slicing does not partition SMs. All time-sliced contexts have access to the full SM count during their time slice. SM partitioning is a feature of MIG, not time-slicing.
+- **D is incorrect:** A training job requesting nvidia.com/gpu: 4 on a time-sliced node receives 4 logical GPU resources that map to the same physical GPU. A well-configured training framework would detect these as the same physical device (same GPU UUID) and not attempt multi-GPU parallelism across them.
+
+**Difficulty:** Hard
+**Domain:** GPU Resource Management & Scheduling
+**Cognitive Level:** Analyze
+**Scenario Type:** Optimization
+
+---
+
+**Question 14:**
+An AI Ops engineer is configuring the NVIDIA GPU Operator's MIG Manager on a fleet of A100 nodes. They need to apply a heterogeneous MIG profile (different GPU instances on different GPUs within the same node). The engineer sets mig.strategy=mixed in the GPU Operator configuration. What is the operational implication of the mixed strategy compared to the single strategy?
+
+Options:
+A. In mixed mode, the GPU Operator allows different MIG profiles per GPU on the same node; in single mode, all GPUs on a node must use the same MIG profile
+B. In mixed mode, MIG and non-MIG GPUs can coexist in the same Kubernetes cluster; in single mode, all nodes must either be fully MIG or fully non-MIG
+C. Mixed mode enables time-slicing as a fallback when MIG partitioning cannot be applied; single mode enforces strict MIG-only execution
+D. In mixed mode, GPU resources are advertised as both nvidia.com/gpu and nvidia.com/mig-* simultaneously per physical GPU; in single mode only one resource type is advertised per node
+
+**Correct Answer:** A
+
+**Explanation:**
+- **A is correct:** The GPU Operator's MIG strategy controls how the device plugin advertises GPU resources at the Kubernetes node level. In single mode, all GPUs on a node must use identical MIG profiles (or be all ungrouped), and resources are advertised uniformly. In mixed mode, different GPUs on the same node can use different MIG profiles, and the device plugin advertises the specific MIG instance types per GPU. This enables heterogeneous workload placement on a single node (e.g., GPU 0 as 1x 7g.80gb, GPU 1 as 7x 1g.10gb).
+- **B is incorrect:** Whether nodes are MIG or non-MIG is a per-node configuration, independent of whether the strategy is mixed or single. Both strategies allow mixed MIG/non-MIG node fleets at the cluster level.
+- **C is incorrect:** Mixed mode has no relationship to time-slicing. They are distinct GPU sharing mechanisms managed by different GPU Operator components.
+- **D is incorrect:** In neither mode does a single physical GPU simultaneously advertise both nvidia.com/gpu and nvidia.com/mig-* resources. Once MIG is enabled on a GPU, the physical GPU resource is replaced by the MIG instance resources.
+
+**Difficulty:** Medium
+**Domain:** GPU Resource Management & Scheduling
+**Cognitive Level:** Apply
+**Scenario Type:** Deployment
+
+---
+
+## DOMAIN 6 – KUBERNETES & ORCHESTRATION FOR AI WORKLOADS
+
+---
+
+**Question 15:**
+A Kubeflow Pipeline is orchestrating a complete MLOps workflow: data preprocessing → training → model evaluation → conditional deployment to Triton. The evaluation step uses a custom Python component that queries an external model registry API. During a production run, the evaluation step completes successfully but the conditional deployment step is skipped even though evaluation metrics exceed the deployment threshold. Logs show no errors. What is the MOST likely cause?
+
+Options:
+A. The Kubeflow Pipeline's evaluation component is not passing output parameters correctly to the conditional step's input condition
+B. The external model registry API is rate-limiting the evaluation component, causing it to return a partial metrics object
+C. The Triton deployment step requires a Kubernetes ServiceAccount with permissions that conflict with the evaluation step's ServiceAccount
+D. The Kubeflow Pipeline runner is using a cached result from a previous failed evaluation run
+
+**Correct Answer:** A
+
+**Explanation:**
+- **A is correct:** In Kubeflow Pipelines, conditional execution uses dsl.Condition() that evaluates an output parameter from a preceding step. If the evaluation component writes metrics to a file but doesn't correctly surface them as pipeline component outputs (e.g., using the OutputPath parameter type or metrics artifact), the condition expression receives a None or empty value, which evaluates as false, causing the deployment step to be silently skipped. This is a common pipeline wiring bug that produces no error logs because the condition logic executes as designed — just with wrong input values.
+- **B is incorrect:** API rate limiting would cause the evaluation step to fail or timeout with an HTTP 429 error, not complete successfully with incorrect output values.
+- **C is incorrect:** ServiceAccount permission conflicts would manifest as authorization errors during the deployment step's execution attempt, not as a silent skip of the step.
+- **D is incorrect:** Kubeflow Pipeline caching stores step execution results to avoid re-running unchanged steps. A cached result from a previous run would return the same outputs — and if those outputs previously triggered deployment, the condition would be met again. This would cause incorrect behavior in the opposite direction.
+
+**Difficulty:** Hard
+**Domain:** Kubernetes & Orchestration for AI Workloads
+**Cognitive Level:** Analyze
+**Scenario Type:** Incident
+
+---
+
+**Question 16:**
+An AI training job using the Kubeflow Training Operator (PyTorchJob) is scheduled on a cluster with mixed GPU node types: 4 nodes with A100 80GB GPUs and 6 nodes with V100 32GB GPUs. The job requests 8 workers. The scheduler places 4 workers on A100 nodes and 4 workers on V100 nodes. The training run completes but model accuracy is 8% lower than expected and training loss curves show erratic behavior. What is the MOST likely explanation?
+
+Options:
+A. Mixed GPU placement causes non-deterministic gradient communication ordering in NCCL collectives
+B. The A100 and V100 workers are using different default floating-point precisions (TF32 on A100, FP32 on V100), causing gradient magnitude inconsistencies across ranks during AllReduce
+C. The V100 workers have insufficient memory to hold the full model replica, causing gradient checkpointing to activate and alter the effective batch gradient computation
+D. NCCL cannot form an optimal communication topology when the ring spans both NVLink-connected A100s and PCIe-connected V100s, causing gradient corruption
+
+**Correct Answer:** B
+
+**Explanation:**
+- **B is correct:** NVIDIA A100 introduced TF32 (TensorFloat-32), which is enabled by default in PyTorch for matrix multiplications on A100. TF32 uses FP32 range but 10-bit mantissa precision (vs 23-bit in FP32). V100 GPUs do not support TF32 and execute at full FP32 precision. When gradient tensors computed at different precisions are aggregated via AllReduce, the systematic precision difference across half the workers introduces consistent gradient magnitude errors, leading to degraded convergence and erratic loss curves.
+- **A is incorrect:** NCCL AllReduce operations are deterministic in their communication ordering within a run. Non-determinism in gradient ordering is a within-node, within-operation concern, not a cross-GPU-type issue.
+- **C is incorrect:** If V100 workers lacked memory for the model replica, the job would fail at initialization with OOM errors, not complete successfully with degraded accuracy.
+- **D is incorrect:** NCCL gradient communication errors would cause numerical corruption that would produce NaN/Inf values or catastrophic loss spikes, not a consistent 8% accuracy degradation with erratic-but-finite loss curves.
+
+**Difficulty:** Hard
+**Domain:** Kubernetes & Orchestration for AI Workloads
+**Cognitive Level:** Analyze
+**Scenario Type:** Incident
+
+---
+
+**Question 17:**
+An AI Ops engineer needs to schedule a GPU training job that must ONLY run on nodes with NVLink interconnect between GPUs (required for multi-GPU NCCL performance). The cluster has a mix of NVLink-capable DGX nodes and standard GPU nodes without NVLink. What is the CORRECT Kubernetes mechanism to enforce this placement constraint?
+
+Options:
+A. Set resource.limits.nvidia.com/nvlink: "true" in the pod spec to request NVLink as a schedulable resource
+B. Apply a custom node label (e.g., nvidia.com/nvlink=true) to NVLink-capable nodes and use a nodeSelector or nodeAffinity rule in the pod spec to target those nodes
+C. Configure a Kubernetes PriorityClass for the training job with higher priority than standard GPU jobs to preempt non-NVLink nodes
+D. Use the NVIDIA GPU Operator's topology-aware scheduling plugin to automatically detect and prefer NVLink-enabled nodes
+
+**Correct Answer:** B
+
+**Explanation:**
+- **B is correct:** Kubernetes does not natively expose NVLink as a schedulable resource type. The correct approach is to label NVLink-capable nodes with a custom label (e.g., nvidia.com/nvlink: "true") and use nodeSelector or nodeAffinity in the pod specification to constrain scheduling to only those nodes. This is the standard pattern for any hardware capability that is not natively exposed through the Kubernetes device plugin framework.
+- **A is incorrect:** NVLink is not a Kubernetes extended resource. The nvidia.com/ prefix resources exposed by the NVIDIA device plugin are GPU count, MIG instances, and similar compute resources — not interconnect topology attributes.
+- **C is incorrect:** PriorityClass controls scheduling priority (which jobs preempt which others under resource contention) but does not constrain which nodes a pod can be scheduled to. A high-priority pod will still be placed on any node with sufficient GPU resources.
+- **D is incorrect:** While NVIDIA has developed topology-aware scheduling research, it is not a standard production feature of the GPU Operator in the form described. Node labeling with affinity rules is the production-validated approach.
+
+**Difficulty:** Medium
+**Domain:** Kubernetes & Orchestration for AI Workloads
+**Cognitive Level:** Apply
+**Scenario Type:** Deployment
+
+---
+
+## DOMAIN 7 – SECURITY & ACCESS CONTROL IN AI SYSTEMS
+
+---
+
+**Question 18:**
+An organization stores proprietary model weights in NGC Private Registry. A security audit reveals that a CI/CD pipeline is authenticating to NGC using a shared service account API key stored as a plaintext environment variable in a Jenkinsfile committed to a public GitHub repository. The model weights are valued at $2M in development cost. What is the CORRECT remediation sequence, ordered by priority?
+
+Options:
+A. Rotate the compromised NGC API key immediately → store the new key in a secrets manager (e.g., HashiCorp Vault or Kubernetes Secrets) → update the pipeline to retrieve the key dynamically → audit NGC access logs for unauthorized pulls
+B. Audit NGC access logs first → update the Jenkinsfile to remove the plaintext key → rotate the API key → store the new key in environment variables encrypted at rest
+C. Remove the public GitHub repository → rotate the NGC API key → store the new key in the Jenkinsfile using base64 encoding → enable NGC registry scanning
+D. Revoke all NGC service accounts → rebuild all model artifacts → re-push to a new private registry → redistribute new API keys to all pipeline consumers
+
+**Correct Answer:** A
+
+**Explanation:**
+- **A is correct:** The remediation follows the correct incident response sequence for a credential exposure: (1) Rotate the compromised key immediately to stop ongoing unauthorized access — the key is publicly exposed and must be treated as compromised regardless of whether exploitation has occurred yet. (2) Store the new key in a secrets manager to prevent recurrence. (3) Update the pipeline to retrieve secrets dynamically. (4) Audit access logs to assess the blast radius of the exposure. Rotation must precede the audit because every minute of delay with the key active is additional exposure time.
+- **B is incorrect:** Auditing before rotating the key delays revocation of the compromised credential. Every minute of audit time is time a potential attacker can continue using the exposed key.
+- **C is incorrect:** Base64 encoding is not encryption — it is trivially reversible and provides zero security. Storing a base64-encoded key in a Jenkinsfile is equivalent to plaintext storage.
+- **D is incorrect:** Revoking all service accounts and rebuilding all model artifacts is an extreme response that would cause significant operational disruption without proportional security benefit. The issue is a single compromised API key, not a broad compromise of all service accounts or model integrity.
+
+**Difficulty:** Medium
+**Domain:** Security & Access Control in AI Systems
+**Cognitive Level:** Evaluate
+**Scenario Type:** Incident
+
+---
+
+**Question 19:**
+An AI Ops team is deploying a Triton Inference Server to serve a model that processes sensitive medical records. Compliance requirements mandate that (1) all inference request payloads must be encrypted in transit, (2) access must be restricted to specific internal service identities, and (3) all inference calls must be auditable with requester identity logged. Which combination of controls BEST satisfies all three requirements?
+
+Options:
+A. Enable TLS on Triton's gRPC endpoint + configure Kubernetes NetworkPolicy to restrict ingress to authorized service namespaces + deploy an Istio sidecar with mTLS and access logging enabled
+B. Enable TLS on Triton's HTTP endpoint + use Kubernetes RBAC to restrict pod creation in the Triton namespace + configure Prometheus to record request counts per client IP
+C. Deploy Triton behind an NGINX ingress controller with TLS termination + use API key authentication via request headers + store access logs in an S3 bucket
+D. Enable NVIDIA Triton's built-in authentication plugin + use Kubernetes PodSecurityPolicy to restrict privileged containers + configure ELK stack for log aggregation
+
+**Correct Answer:** A
+
+**Explanation:**
+- **A is correct:** This combination addresses all three requirements precisely. TLS on gRPC satisfies encryption in transit (requirement 1). Kubernetes NetworkPolicy restricts which pods/namespaces can reach the Triton service at the network layer (requirement 2). Istio's mTLS enforces mutual service identity authentication (each service must present a certificate, satisfying requirement 2 at the identity level), and Istio's access logging captures requester identity (service account/certificate) per request (requirement 3).
+- **B is incorrect:** Kubernetes RBAC controls who can create pods, not which running services can call Triton's inference endpoint. Prometheus recording request counts per client IP is not an audit trail — IP addresses are not service identities and can be spoofed or NAT'd.
+- **C is incorrect:** API key authentication via request headers is a valid access control approach but does not satisfy service identity requirements (API keys are not cryptographic identities). TLS termination at NGINX means the Triton-to-NGINX segment may be unencrypted. S3 access log storage is a logging destination, not an identity-aware audit mechanism.
+- **D is incorrect:** Triton does not have a built-in authentication plugin in the standard open-source release. PodSecurityPolicy (deprecated in Kubernetes 1.25) restricts pod privilege escalation but does not control service-to-service communication. ELK log aggregation is a logging infrastructure choice, not an access control mechanism.
+
+**Difficulty:** Hard
+**Domain:** Security & Access Control in AI Systems
+**Cognitive Level:** Evaluate
+**Scenario Type:** Deployment
+
+---
+
+**Question 20:**
+During a routine security review, an AI Ops engineer discovers that a Triton Inference Server pod is running with a Kubernetes ServiceAccount that has cluster-admin privileges. The pod was configured this way by a developer to avoid troubleshooting RBAC issues during initial deployment. What are the security risks specific to this misconfiguration in an AI inference context, and what is the correct remediation?
+
+Options:
+A. The risk is only theoretical; inference workloads do not use Kubernetes API calls, so cluster-admin privileges are dormant. Remediation is documentation of the exception.
+B. A compromised Triton pod (e.g., via a malicious model or deserialization exploit) could use the cluster-admin token mounted in the pod to exfiltrate secrets from all namespaces, modify workloads cluster-wide, or escalate to full cluster compromise. Remediate by creating a minimal RBAC Role with only the permissions the pod legitimately requires and binding it to a dedicated ServiceAccount.
+C. The risk is excessive API server load from Triton's internal health checks using the cluster-admin token. Remediate by setting automountServiceAccountToken: false and using a dedicated token for health checks.
+D. Cluster-admin privileges allow the inference pod to directly access GPU resources on other nodes, creating a data leakage path between inference tenants. Remediate using MIG to provide GPU-level isolation.
+
+**Correct Answer:** B
+
+**Explanation:**
+- **B is correct:** The Kubernetes service account token is automatically mounted into every pod and can be used to call the Kubernetes API with the permissions of the bound ServiceAccount. A cluster-admin token provides unrestricted access to the entire cluster's API. In an AI inference context, an attacker who achieves code execution within Triton (via model deserialization vulnerabilities, prompt injection leading to code execution, or supply chain compromise of model artifacts) would immediately have access to a cluster-admin credential — enabling full cluster compromise. The principle of least privilege requires creating a minimal Role with only required permissions (e.g., reading its own ConfigMap).
+- **A is incorrect:** Inference workloads may not make Kubernetes API calls in normal operation, but the token is still mounted and available to any code running in the pod. "Dormant" privileges are not safe — they are available to any attacker who gains code execution.
+- **C is incorrect:** Triton's health check endpoints are HTTP endpoints served by Triton itself, not Kubernetes API calls. Health checks do not use the ServiceAccount token. The risk described is fabricated.
+- **D is incorrect:** Kubernetes ServiceAccount privileges operate at the Kubernetes API level, not at the hardware/GPU level. They cannot be used to access GPU memory on other nodes. GPU isolation is a separate concern addressed by MIG, not by RBAC.
+
+**Difficulty:** Hard
+**Domain:** Security & Access Control in AI Systems
+**Cognitive Level:** Evaluate
+**Scenario Type:** Incident
+
+---
+
+## BONUS – INTEGRATED NGC / FLEET COMMAND / BASE COMMAND
+
+---
+
+**Question 21:**
+A team is using NVIDIA Base Command Platform to run hyperparameter optimization (HPO) across 50 concurrent training jobs on a DGX cluster. Each job uses 8 GPUs. After 3 hours, the team notices that 12 jobs have been running for significantly longer than the expected 45-minute runtime per experiment. GPU utilization on those 12 jobs is 100% but loss has not decreased in over 2 hours. What is the MOST operationally efficient response using Base Command Platform?
+
+Options:
+A. Wait for the jobs to complete — long-running jobs may have found a promising hyperparameter region requiring more compute
+B. Use Base Command Platform's job monitoring interface to identify the 12 outlier jobs by experiment ID, terminate them, and resubmit with adjusted hyperparameter search bounds based on the insights from the 38 completed jobs
+C. Kill all 50 jobs and restart the HPO sweep with a smaller search space
+D. Reduce the GPU allocation for the 12 long-running jobs to 4 GPUs each to free resources for new experiments
+
+**Correct Answer:** B
+
+**Explanation:**
+- **B is correct:** Base Command Platform provides per-job monitoring, including runtime tracking and the ability to terminate individual jobs. Loss that has not decreased in 2 hours indicates these 12 experiments have converged to poor local minima or are trapped in regions of the hyperparameter space with non-viable configurations. Terminating only the outlier jobs (not all 50) preserves the results of the 38 running jobs, and resubmitting with refined search bounds based on available results is the efficient HPO operational pattern.
+- **A is incorrect:** Stagnant training loss for 2+ hours is not an indicator of a promising hyperparameter region — it is an indicator of a failed experiment. Continuing to allocate 96 GPUs (12 jobs × 8 GPUs) for non-progressing experiments is operationally wasteful.
+- **C is incorrect:** Killing all 50 jobs discards results from the 38 jobs that are executing normally. This is unnecessarily destructive and delays the HPO process significantly.
+- **D is incorrect:** Modifying GPU allocation for in-flight jobs (reducing from 8 to 4 GPUs) would require restarting those jobs with new resource configurations. It does not address the root issue (bad hyperparameter regions) and would not improve loss convergence.
+
+**Difficulty:** Medium
+**Domain:** GPU Resource Management & Scheduling
+**Cognitive Level:** Evaluate
+**Scenario Type:** Optimization
+
+---
+
+**Question 22:**
+An organization uses NVIDIA Fleet Command to manage 500 edge inference nodes deployed across retail locations. A critical security patch for the NVIDIA container runtime must be applied within a 4-hour compliance window. The patch requires restarting the container runtime, which will temporarily interrupt inference service on each node. What Fleet Command deployment strategy BEST balances compliance requirements with minimum service disruption?
+
+Options:
+A. Apply the patch to all 500 nodes simultaneously to complete within the 4-hour window as quickly as possible
+B. Use Fleet Command's rolling deployment with a configurable batch size (e.g., 10% of nodes per wave), allowing inference to be served by the remaining 90% during each wave's maintenance window
+C. Schedule the patch deployment for an overnight maintenance window outside of business hours, even if it exceeds the 4-hour compliance window
+D. Apply the patch only to nodes that are currently reporting zero inference traffic to minimize disruption
+
+**Correct Answer:** B
+
+**Explanation:**
+- **B is correct:** Fleet Command supports rolling deployments with configurable batch sizes. Deploying in waves (e.g., 50 nodes at a time, 10 waves) ensures that at any point, 90% of the fleet remains serving inference while 10% undergoes patching. Each wave can complete within 20-25 minutes, keeping the total deployment well within the 4-hour compliance window while maintaining service continuity across the fleet.
+- **A is incorrect:** Simultaneously patching all 500 nodes would cause complete fleet-wide service interruption during the container runtime restart. This violates the minimum disruption requirement and creates a large blast radius if the patch causes issues.
+- **C is incorrect:** Scheduling the patch for an overnight window that exceeds the compliance deadline directly violates the 4-hour compliance requirement. Compliance windows are not suggestions.
+- **D is incorrect:** Applying patches only to zero-traffic nodes creates an inconsistently patched fleet. Nodes that are currently busy may never be in a zero-traffic state, leaving them unpatched and non-compliant indefinitely.
+
+**Difficulty:** Medium
+**Domain:** Incident Response & Troubleshooting
+**Cognitive Level:** Evaluate
+**Scenario Type:** Deployment
+
+---
+
+**Question 23:**
+An AI Ops engineer pulls a model from NGC Model Registry using the NGC CLI and deploys it to Triton. The model card on NGC specifies it was optimized for A100 GPUs with TensorRT 8.5. The production cluster runs H100 GPUs with TensorRT 9.1 bundled in the Triton container. During inference, the model loads successfully but throughput is 40% lower than the NGC benchmark figures. No errors are reported. What is the MOST likely explanation?
+
+Options:
+A. The TensorRT engine plan (.plan file) from NGC was compiled for A100's Ampere architecture; running it on H100 (Hopper architecture) causes TensorRT to fall back to a compatibility execution path that is not optimized for H100's new features
+B. The NGC model was quantized to INT8 using A100-specific calibration data that is not representative of H100 compute characteristics
+C. H100 GPUs require a minimum batch size of 16 for optimal throughput; the NGC benchmark used batch size 32
+D. TensorRT 9.1 has removed optimization passes that were present in TensorRT 8.5, reducing overall engine efficiency
+
+**Correct Answer:** A
+
+**Explanation:**
+- **A is correct:** TensorRT engine plans are compiled for a specific GPU architecture (compute capability). An engine compiled for A100 (SM 8.0) can run on H100 (SM 9.0) through CUDA's forward compatibility mechanism, but TensorRT will use a generic execution path rather than H100-specific optimizations like Transformer Engine (FP8 hardware support) and new Hopper-specific kernel variants. This compatibility execution mode can be 30-50% slower than a natively compiled H100 engine. The solution is to re-optimize the model using trtexec on an H100 with TensorRT 9.1.
+- **B is incorrect:** INT8 calibration data is used for quantization accuracy, not GPU-specific computation pathways. Calibration data does not affect compute throughput characteristics between GPU architectures.
+- **C is incorrect:** There is no H100-specific minimum batch size requirement. H100 is fully backward compatible with any batch size that functions on A100.
+- **D is incorrect:** TensorRT maintains backward compatibility and generally improves optimization passes across versions. A newer TensorRT version typically achieves equal or better performance than an older version on supported hardware.
+
+**Difficulty:** Hard
+**Domain:** Model Deployment & Inference Operations
+**Cognitive Level:** Analyze
+**Scenario Type:** Optimization
+
+---
+
+**Question 24:**
+A Triton ensemble pipeline processes user-uploaded images through: (1) image validation (Python backend), (2) preprocessing/resize (Python backend), (3) primary CNN model (TensorRT backend), (4) secondary classifier (TensorRT backend), (5) result aggregation (Python backend). During a security review, the team identifies that malicious users could potentially upload crafted images to exploit the Python backends. Which control is MOST effective at limiting the blast radius of a successful exploit in the Python backend stages?
+
+Options:
+A. Enable Triton's input validation by setting max tensor size limits in the model configuration to reject oversized payloads
+B. Run Triton with a read-only root filesystem and no-new-privileges security context, and isolate the Python backend execution in a gVisor-sandboxed container
+C. Implement request rate limiting at the Kubernetes Ingress layer to prevent high-volume exploit attempts
+D. Use Triton's response caching to serve cached results instead of executing Python backends for repeated inputs
+
+**Correct Answer:** B
+
+**Explanation:**
+- **B is correct:** A read-only root filesystem prevents an attacker from writing malicious files after code execution. The no-new-privileges flag prevents privilege escalation within the container. gVisor (runsc) sandboxes the container's system calls through a user-space kernel, dramatically limiting what a successful code execution exploit can do — it cannot directly access host kernel interfaces, GPU device files outside the CUDA driver interface, or other containers. These controls directly limit blast radius (what an attacker can do after exploiting the Python backend).
+- **A is incorrect:** Max tensor size limits prevent oversized payload attacks (DoS, buffer overflow via input size) but do not limit what happens after a successful code execution exploit in the Python logic layer. An attacker with arbitrary code execution can bypass application-level validation.
+- **C is incorrect:** Rate limiting reduces the attack surface and prevents brute-force exploitation attempts but does not limit blast radius after a single successful exploit.
+- **D is incorrect:** Response caching only serves cached results for previously seen inputs. It does not execute the pipeline for novel inputs, so a crafted unique image would still be processed by the Python backends.
+
+**Difficulty:** Hard
+**Domain:** Security & Access Control in AI Systems
+**Cognitive Level:** Evaluate
+**Scenario Type:** Incident
+
+---
+
+**Question 25:**
+An AI Ops team is planning to migrate a Triton deployment from single-GPU A100 serving to a 4-GPU MIG configuration on the same physical hardware, serving four independent model tenants. Before migration, the team must validate that the MIG partition sizes will not cause inference SLA regressions for each tenant. Which pre-migration validation approach is MOST rigorous?
+
+Options:
+A. Review the model cards for each tenant's model and compare published benchmark throughput figures to SLA requirements
+B. Benchmark each tenant model on a representative MIG instance profile (matching the planned partition size) using tools such as Triton's perf_analyzer or genai-perf with production-representative traffic patterns, and compare results against current single-GPU baselines
+C. Calculate the theoretical throughput reduction by dividing the current single-GPU throughput by 4, and validate that each quarter meets the SLA
+D. Deploy the MIG configuration to production with a short observation window, measuring real SLA compliance before committing to the migration
+
+**Correct Answer:** B
+
+**Explanation:**
+- **B is correct:** MIG instances are not simply 1/N of a full GPU in performance — they have specific SM counts, memory bandwidth allocations, and L2 cache sizes that interact non-linearly with different model types. A transformer model may perform proportionally on a MIG slice while a memory-bandwidth-bound CNN may degrade disproportionately. Benchmarking each specific model on the exact planned MIG profile using Triton's perf_analyzer (for standard models) or genai-perf (for generative models) with production traffic distributions is the only rigorous validation method before committing to the migration.
+- **A is incorrect:** Published model card benchmarks are measured on full GPUs, not MIG instances, and use reference hardware that may differ from the production environment. They cannot predict MIG partition performance.
+- **C is incorrect:** Linear throughput scaling (dividing by 4) is a common oversimplification that does not account for MIG-specific resource allocation non-linearities, memory bandwidth sharing, or L2 cache reduction effects. It would produce incorrect SLA predictions for many model types.
+- **D is incorrect:** Deploying an unvalidated configuration to production and observing SLA compliance in real-time exposes tenants to potential SLA breaches during the observation window. This violates the responsibility to validate before impacting production traffic.
+
+**Difficulty:** Hard
+**Domain:** GPU Resource Management & Scheduling
+**Cognitive Level:** Evaluate
+**Scenario Type:** Deployment
+
+---
+
+## SUMMARY STATISTICS – SET 2
+
+| Metric | Count |
+|---|---|
+| Total Questions | 25 |
+| Easy (0%) | 0 |
+| Medium (28%) | 7 |
+| Hard (72%) | 18 |
+
+### Domain Distribution
+| Domain | Questions |
+|---|---|
+| Model Deployment & Inference Operations | Q1, Q2, Q3, Q23 |
+| Monitoring & Observability | Q4, Q5, Q6 |
+| Performance Optimization & Scaling | Q7, Q8 |
+| Incident Response & Troubleshooting | Q9, Q10, Q11, Q22 |
+| GPU Resource Management & Scheduling | Q12, Q13, Q14, Q21, Q25 |
+| Kubernetes & Orchestration for AI Workloads | Q15, Q16, Q17 |
+| Security & Access Control in AI Systems | Q18, Q19, Q20, Q24 |
+
+### Emphasis Coverage
+| Tool / Topic | Questions |
+|---|---|
+| TensorRT-LLM & LLM Serving | Q1, Q3, Q7 |
+| Triton Ensemble & Pipelines | Q2, Q8, Q24 |
+| MIG & GPU Partitioning | Q12, Q13, Q14, Q25 |
+| NGC / Fleet Command / Base Command | Q11, Q21, Q22, Q23 |
+
+---
+*Generated for NVIDIA Certified Professional – AI Operations exam preparation. All scenarios are original and do not reproduce real certification exam content.*
