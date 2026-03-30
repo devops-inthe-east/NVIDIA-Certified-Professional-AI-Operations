@@ -1,6 +1,7 @@
 NVIDIA CERTIFIED PROFESSIONAL \u2013 AI OPERATIONS (AI OPS)
 Exam Question Bank
 DOMAIN 1 \u2013 MODEL DEPLOYMENT & INFERENCE OPERATIONS
+
 Question 1:
 A production Triton Inference Server instance is serving a BERT-based NLP model. After a recent model update, the operations team notices that P99 latency has increased from 45ms to 210ms. GPU utilization remains at 95%. No configuration changes were made to the server. What is the MOST likely cause?
 Options:
@@ -18,6 +19,7 @@ Difficulty: Medium
 Domain: Model Deployment & Inference Operations
 Cognitive Level: Analyze
 Scenario Type: Incident
+
 Question 2:
 You are deploying a computer vision model on NVIDIA Triton Inference Server using the model ensemble feature. The pipeline consists of a preprocessing model, an inference model, and a postprocessing model. During load testing, you observe that overall pipeline throughput is 40% lower than expected. The inference model alone achieves the expected throughput in isolation. What should you investigate FIRST?
 Options:
@@ -35,6 +37,7 @@ Difficulty: Medium
 Domain: Model Deployment & Inference Operations
 Cognitive Level: Apply
 Scenario Type: Optimization
+
 Question 3:
 Your team is deploying a new large language model (LLM) on NVIDIA Triton using the TensorRT-LLM backend. The model requires 70GB of GPU memory. The available nodes have 4x A100 80GB GPUs each. After deployment, inference requests return errors citing insufficient memory. What is the MOST appropriate resolution?
 Options:
@@ -52,6 +55,8 @@ Difficulty: Hard
 Domain: Model Deployment & Inference Operations
 Cognitive Level: Evaluate
 Scenario Type: Deployment
+
+
 DOMAIN 2 \u2013 MONITORING & OBSERVABILITY
 Question 4:
 An AI Ops engineer is setting up observability for a Triton Inference Server deployment. They need to detect when the model's prediction confidence distribution shifts significantly compared to the training baseline. Which combination of tools and signals is MOST appropriate for this use case?
@@ -70,6 +75,7 @@ Difficulty: Medium
 Domain: Monitoring & Observability
 Cognitive Level: Evaluate
 Scenario Type: Monitoring
+
 Question 5:
 An AI Ops engineer observes that DCGM Exporter is reporting a sustained GPU_MEMORY_USED value of 98% across all GPUs in a node, while GPU_UTILIZATION hovers at only 22%. No inference errors are being reported. What does this pattern MOST likely indicate?
 Options:
@@ -87,6 +93,7 @@ Difficulty: Medium
 Domain: Monitoring & Observability
 Cognitive Level: Analyze
 Scenario Type: Monitoring
+
 Question 6:
 You are configuring log-based alerting for a production AI inference cluster. Which log signal from Triton Inference Server is MOST critical to monitor for early detection of backend model execution failures that do not crash the server process?
 Options:
@@ -104,7 +111,9 @@ Difficulty: Medium
 Domain: Monitoring & Observability
 Cognitive Level: Apply
 Scenario Type: Incident
+
 DOMAIN 3 \u2013 PERFORMANCE OPTIMIZATION & SCALING
+
 Question 7:
 A Triton Inference Server instance is handling image classification requests with an average batch size of 1 (client sends individual requests). GPU utilization is consistently 18%. Latency is acceptable at 12ms. The business requirement changes to maximize throughput to support 10x the current request rate. What is the MOST effective configuration change?
 Options:
@@ -122,6 +131,8 @@ Difficulty: Easy
 Domain: Performance Optimization & Scaling
 Cognitive Level: Apply
 Scenario Type: Optimization
+
+
 Question 8:
 An operations team is running a large recommendation model on an A100 80GB GPU. The model uses 35GB of VRAM. The team wants to co-locate a second, smaller model (8GB VRAM) on the same GPU to improve hardware utilization. After attempting to schedule both pods, the second model's pod fails to start with an "insufficient GPU resources" error. What is the MOST likely cause?
 Options:
@@ -139,6 +150,8 @@ Difficulty: Medium
 Domain: Performance Optimization & Scaling
 Cognitive Level: Analyze
 Scenario Type: Deployment
+
+
 Question 9:
 You are tasked with reducing inference latency for a real-time fraud detection model from 8ms to under 3ms on an NVIDIA A30 GPU. The model is currently running as FP32. Which sequence of optimizations should be attempted in order of expected impact, from highest to lowest?
 Options:
@@ -156,7 +169,10 @@ Difficulty: Hard
 Domain: Performance Optimization & Scaling
 Cognitive Level: Evaluate
 Scenario Type: Optimization
+
+
 DOMAIN 4 \u2013 INCIDENT RESPONSE & TROUBLESHOOTING
+
 Question 10:
 A production model serving cluster begins returning HTTP 503 errors for 15% of requests. Kubernetes shows all Triton pods as Running and Ready. GPU utilization is at 100%. Average latency has jumped from 80ms to 4200ms. What is the MOST appropriate immediate incident response action?
 Options:
@@ -174,6 +190,8 @@ Difficulty: Easy
 Domain: Incident Response & Troubleshooting
 Cognitive Level: Apply
 Scenario Type: Incident
+
+
 Question 11:
 An AI operations engineer receives an alert that a Triton pod has been OOMKilled three times in the past hour. The model being served is unchanged. DCGM metrics show GPU memory utilization at 78%, which is normal. The pod's Kubernetes memory limit is set to 8Gi. What is the MOST likely root cause?
 Options:
@@ -191,6 +209,7 @@ Difficulty: Hard
 Domain: Incident Response & Troubleshooting
 Cognitive Level: Analyze
 Scenario Type: Incident
+
 Question 12:
 After a routine NGC container image upgrade for a Triton deployment, a specific model begins failing with "TensorRT engine version mismatch" errors. Other models on the same server are unaffected. What is the correct remediation?
 Options:
