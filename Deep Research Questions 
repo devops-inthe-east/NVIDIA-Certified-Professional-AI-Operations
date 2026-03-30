@@ -1,0 +1,345 @@
+
+
+
+
+NVIDIA Certified Professional – AI Operations (AI Ops) Certification – Mock Exam
+Executive Summary: This mock exam comprises 21 scenario-driven questions (minimum passing score ~70%) covering NVIDIA AI Operations topics. It is structured for ~60–90 minutes of work, reflecting the official 120-minute, 70–75-question exam
+. Questions span all AI Ops domains, from model deployment and monitoring to Kubernetes orchestration and security. Each question is multiple-choice (A–D) with a clear correct answer and explanation. In practice, allow ~3–5 minutes per question, review answers if time permits, then submit to compute a score out of 21. A passing score is typically around 70–75%.
+
+Domain	Easy	Medium	Hard	Total
+Model Deployment & Inference	1	1	1	3
+Monitoring & Observability	0	2	2	4
+Performance Optimization & Scaling	0	2	1	3
+Incident Response & Troubleshooting	1	1	1	3
+GPU Resource Management & Scheduling	1	1	1	3
+Kubernetes & Orchestration	1	1	1	3
+Security & Access Control	0	2	0	2
+Total	4	10	7	21
+
+mermaid
+Copy
+flowchart LR
+    Start((Start Exam)) --> Questions[Answer Questions (21 questions)]
+    Questions --> Review{Review Answers if time remains}
+    Review --> Score[Receive Score \n(Scoring: ~70% to pass)]
+Question 1: A Triton Inference Server is deployed without dynamic batching. The metrics show: Request Count = 2, Inference Count = 9, Execution Count = 2. What does the Execution Count of 2 indicate?
+
+Options:
+A. Dynamic batching is enabled and batched the requests into two executions.
+B. Dynamic batching is disabled; each request executed separately. (Correct)
+C. The server is using two GPUs in parallel.
+D. The server is running in synchronous mode, limiting executions to two.
+
+Correct Answer: B
+
+Explanation: In Triton metrics, Execution Count = 2 for two requests means each request was executed separately (no dynamic batching)
+. If dynamic batching were enabled, the two requests could have been combined into one execution (Execution Count = 1)
+. Options A, C, and D are incorrect because the log indicates no batching (two executions) and it’s not related to multi-GPU or synchronous vs asynchronous modes.
+
+Difficulty: Easy
+Domain: Model Deployment & Inference
+Cognitive Level: Apply
+Scenario Type: Monitoring / Inference Operations
+
+Question 2: An AI cluster uses NVIDIA A100 GPUs in multi-tenant mode. Currently, GPUs are allocated to jobs exclusively, and utilization is low. What change will allow secure sharing of GPU memory and compute among multiple workloads?
+
+Options:
+A. Enable Multi-Instance GPU (MIG) mode on the A100 GPUs. (Correct)
+B. Enable NVIDIA Multi-Process Service (MPS) on each GPU.
+C. Switch to NVIDIA GRID vGPU licensing.
+D. Install NVIDIA Virtual GPU Manager.
+
+Correct Answer: A
+
+Explanation: MIG (Multi-Instance GPU) partitions Ampere-class GPUs (like A100/H100) into multiple independent GPU instances, each with dedicated memory and compute
+. This allows multiple tenants to share a single GPU securely. MPS (option B) allows CUDA contexts to share a GPU but does not isolate memory. Options C and D refer to vGPU (for virtual desktops) which is not applicable to data-center training. The correct answer is MIG
+.
+
+Difficulty: Easy
+Domain: GPU Resource Management & Scheduling
+Cognitive Level: Apply
+Scenario Type: Deployment / Resource Allocation
+
+Question 3: A new Kubernetes node with NVIDIA GPUs is added, but pods requesting nvidia.com/gpu resources remain pending. The node has the NVIDIA GPU driver installed. What is the most likely cause?
+
+Options:
+A. The NVIDIA device plugin is not installed on the cluster. (Correct)
+B. The node’s CPU has insufficient cores for GPU scheduling.
+C. The MIG Manager is enabled, preventing standard GPU scheduling.
+D. The node lacks an Ethernet connection to the network.
+
+Correct Answer: A
+
+Explanation: In Kubernetes, the NVIDIA device plugin (installed via GPU Operator or daemonset) advertises the nvidia.com/gpu resource on GPU nodes. If it’s missing, pods will remain pending even if the driver is present. Options B and D are irrelevant to GPU resource advertising. Option C is incorrect because MIG Manager would show MIG node labels but wouldn’t block GPU scheduling entirely. The lack of the device plugin is the common cause. (No official doc cited here.)
+
+Difficulty: Easy
+Domain: Kubernetes & Orchestration for AI Workloads
+Cognitive Level: Apply
+Scenario Type: Deployment / Orchestration Issue
+
+Question 4: A node in a Base Command-managed cluster goes offline. BCM logs indicate a fatal GPU NVLink error (SXid). What is the best first action to resolve this node outage?
+
+Options:
+A. Use Base Command Manager to diagnose and remediate the node. (Correct)
+B. Attempt to SSH into the node and restart Docker.
+C. Remove the node from the cluster and rebuild it from scratch.
+D. Change the user permissions on the node in BCM.
+
+Correct Answer: A
+
+Explanation: The AI Ops blueprint explicitly calls for using Base Command Manager (BCM) to diagnose and resolve node outages and resource bottlenecks
+. BCM’s monitoring and alerting would identify the underlying cause (e.g. NVLink error). Option B is less effective without addressing hardware errors. Option C is extreme before diagnosis. Option D (user permissions) is unrelated to this failure. The correct approach is to use BCM as intended
+.
+
+Difficulty: Easy
+Domain: Incident Response & Troubleshooting
+Cognitive Level: Apply
+Scenario Type: Incident / Node Outage
+
+Question 5: In a Kubernetes AI cluster, you need to collect real-time GPU health and utilization metrics from all nodes. Which NVIDIA tool is designed for this purpose?
+
+Options:
+A. nvidia-smi command on each node.
+B. NVIDIA DCGM with the DCGM Exporter. (Correct)
+C. NVIDIA Management Library (NVML) directly.
+D. NVIDIA CUDA Profiler.
+
+Correct Answer: B
+
+Explanation: NVIDIA DCGM (Data Center GPU Manager) integrates with Kubernetes via a Prometheus exporter to gather GPU telemetry across the cluster
+. This includes health monitoring and utilization. The nvidia-smi CLI (option A) only works per node, not cluster-wide, and NVML (option C) is a library interface, not a deployed monitoring solution. CUDA Profiler (D) is for profiling kernels, not cluster monitoring. DCGM-Exporter is the correct choice
+.
+
+Difficulty: Medium
+Domain: Monitoring & Observability
+Cognitive Level: Apply
+Scenario Type: Monitoring / Operations
+
+Question 6: An A100 GPU node is set up with 7 MIG instances (1g.5gb profile) per GPU, but a pod scheduled to one instance still runs out of memory. What should be adjusted to allow sufficient GPU memory for that job?
+
+Options:
+A. Switch to fewer, larger MIG instances on the GPU. (Correct)
+B. Increase the node’s system RAM.
+C. Disable MIG so the pod can use the full GPU.
+D. Enable NVIDIA Multi-Process Service (MPS).
+
+Correct Answer: A
+
+Explanation: If a single pod is OOM-killing despite MIG instances, it likely needs more GPU memory. Configuring fewer, larger MIG profiles (e.g. 2g or 3g profiles) gives each instance more memory. Disabling MIG (C) would lock the pod to one GPU but breaks multi-tenancy. Increasing host RAM (B) doesn’t affect GPU memory. MPS (D) won’t allocate more GPU memory. The right approach is to reconfigure MIG with larger instance profiles so the workload has more memory.
+
+Difficulty: Medium
+Domain: GPU Resource Management & Scheduling
+Cognitive Level: Apply
+Scenario Type: Optimization / Resource Tuning
+
+Question 7: A data pipeline reads large datasets from NVMe storage into GPU memory. Enabling NVIDIA GPUDirect Storage resulted in 3.8x lower end-to-end latency and 8.8x throughput compared to the previous approach
+. What does this imply?
+
+Options:
+A. GPUDirect Storage significantly reduces data transfer latency and improves throughput. (Correct)
+B. GPUDirect Storage decreases latency but does not affect throughput.
+C. GPUDirect Storage affects neither latency nor throughput.
+D. GPUDirect Storage increases latency due to added complexity.
+
+Correct Answer: A
+
+Explanation: The cited NVIDIA case study shows that enabling GPUDirect Storage (which bypasses CPU buffers) dramatically reduces latency and increases bandwidth for GPU I/O
+. Thus, option A is correct. Options B and C contradict the measured results. Option D is false – GPUDirect actually simplifies the path by avoiding extra copies, which lowers latency. GPUDirect’s whole benefit is highlighted by the 3.8× latency improvement and 8.8× throughput gain
+.
+
+Difficulty: Medium
+Domain: Performance Optimization & Scaling
+Cognitive Level: Analyze
+Scenario Type: Optimization / Data Throughput
+
+Question 8: A training container pulled from NVIDIA NGC fails to start with a Docker “401 Unauthorized” error. What is the most likely cause and fix?
+
+Options:
+A. The container image tag is incorrect for the hardware.
+B. The NVIDIA driver on the host is outdated.
+C. The user has not authenticated with NGC (missing API key). (Correct)
+D. The container requires a licensed virtualization (vGPU) feature.
+
+Correct Answer: C
+
+Explanation: A 401 Unauthorized from NGC indicates a problem with registry authentication – typically the user has not set up or has an incorrect NGC API key. The fix is to log in with the proper credentials. The exam blueprint specifically lists “Troubleshoot the deployment of a container from NGC” as an objective
+, which includes verifying NGC credentials. Options A and B would usually give different errors, and D is unrelated. The key point is that NGC requires a valid account/token, so option C is correct
+.
+
+Difficulty: Medium
+Domain: Model Deployment & Inference
+Cognitive Level: Apply
+Scenario Type: Troubleshooting / Workload Deployment
+
+Question 9: A batch inference job on Kubernetes requests 8 GPUs but none are allocated. The kubectl describe pod shows “Insufficient gpu”. GPU nodes exist. What likely misconfiguration causes this?
+
+Options:
+A. The pod’s resource request should use nvidia.com/gpu instead of a generic GPU resource.
+B. The GPU Operator’s NVIDIA driver must be manually installed on each node.
+C. The MIG mode must be disabled for inference workloads.
+D. The node must have a taint that matches the pod’s toleration. (Correct)
+
+Correct Answer: D
+
+Explanation: An “Insufficient gpu” error despite available GPUs often means the pod’s scheduling constraints don’t match the node. If the nodes are tainted for GPUs (e.g. nvidia.com/gpu=present:NoSchedule) but the pod lacks a matching toleration, it won’t schedule. Option A is incorrect because nvidia.com/gpu is the correct resource name. Option B is misleading – the GPU Operator already handles driver installation. MIG (C) would restrict GPUs, not completely block scheduling. The most realistic cause is a Kubernetes taint/toleration issue, so D is correct.
+
+Difficulty: Medium
+Domain: Kubernetes & Orchestration for AI Workloads
+Cognitive Level: Analyze
+Scenario Type: Troubleshooting / Scheduling
+
+Question 10: On a GPU node, kubectl get node shows a label nvidia.com/gpu.present=true. Which component in the cluster applies this label so that pods requesting GPUs can schedule there?
+
+Options:
+A. NVIDIA GPU Operator’s device plugin daemonset. (Correct)
+B. NVIDIA Base Command Manager (BCM).
+C. NVIDIA CUDA Toolkit installer on the node.
+D. Kubernetes node feature discovery (NFD).
+
+Correct Answer: A
+
+Explanation: The NVIDIA GPU Operator deploys a device-plugin daemonset that scans the node and applies the nvidia.com/gpu.present=true label (and others) when a GPU is found
+. This lets the scheduler know GPUs exist. Base Command (B) and CUDA Toolkit (C) are unrelated to node labeling. Kubernetes NFD (D) does similar labeling for generic features, but the specific nvidia.com/gpu.present label is set by the NVIDIA device plugin as shown in GPU Operator docs
+.
+
+Difficulty: Medium
+Domain: Kubernetes & Orchestration for AI Workloads
+Cognitive Level: Apply
+Scenario Type: Deployment / Node Configuration
+
+Question 11: During inference, GPU memory usage jumps to ~96% and jobs fail with out-of-memory. Which action best addresses this?
+
+Options:
+A. Reduce the model’s batch size or use a smaller model. (Correct)
+B. Increase the node’s DDR memory.
+C. Enable Multi-Process Service (MPS) to share GPU memory.
+D. Overclock the GPU to get more performance headroom.
+
+Correct Answer: A
+
+Explanation: Extremely high GPU memory usage means the model or batch is too large. The immediate fix is to reduce memory demand: use smaller batches or a lighter model. Options B and C do not increase GPU memory; DDR is host RAM, and MPS does not increase memory capacity. Option D (overclocking) does not affect memory. This falls under performance tuning – the correct remedy is to reduce GPU memory footprint. MIG could also be considered, but that partitions rather than increases memory. The best answer is A.
+
+Difficulty: Medium
+Domain: Performance Optimization & Scaling
+Cognitive Level: Analyze
+Scenario Type: Optimization / Resource Tuning
+
+Question 12: A DGX system with NVSwitches reports repeated fatal GPU errors (SXid) in dmesg. The NVIDIA Fabric Manager service is currently disabled. What is the most effective way to resolve the NVSwitch errors?
+
+Options:
+A. Enable and start the NVIDIA Fabric Manager service on the node. (Correct)
+B. Disable NVSwitch mode in the GPU BIOS.
+C. Uninstall the GPU drivers and reinstall them.
+D. Move GPUs to another PCIe slot.
+
+Correct Answer: A
+
+Explanation: SXid errors on NVSwitch-connected GPUs typically indicate the fabric manager (FM) is not running or configured. NVIDIA Fabric Manager must run (usually as root) to manage the NVSwitch fabrics
+. Enabling FM will configure the NVSwitch topology and resolve SXid issues. Disabling NVSwitch (B) is not a practical option, and driver reinstall (C) or moving slots (D) will not address the fabric configuration. The FM documentation notes FM must run as root to configure NVLinks/NVSwitches
+.
+
+Difficulty: Hard
+Domain: Incident Response & Troubleshooting
+Cognitive Level: Analyze
+Scenario Type: Troubleshooting / Hardware Failure
+
+Question 13: A very large model (tens of gigabytes) must be trained, but a single GPU cannot hold it in memory. Which approach best allows training to proceed?
+
+Options:
+A. Use model parallel training across multiple GPUs (splitting the model). (Correct)
+B. Enable MIG to split one GPU into instances for parallel training.
+C. Use a higher CUDA compute capability (e.g., upgrade from Ampere to newer arch).
+D. Install more system memory (RAM) to support paging.
+
+Correct Answer: A
+
+Explanation: For extremely large models that exceed one GPU’s memory, model parallelism (splitting the model across GPUs) is required. Options B and C do not solve the fundamental memory limit (MIG still confines per-instance memory to one GPU’s size, and GPU architecture changes won’t magically increase memory). Installing more DDR (D) doesn’t help GPU memory. Thus, splitting the model across multiple GPUs via model-parallel or distributed training is the viable solution.
+
+Difficulty: Hard
+Domain: Model Deployment & Inference
+Cognitive Level: Analyze
+Scenario Type: Optimization / Capacity Planning
+
+Question 14: A data pipeline currently uses a CPU “bounce buffer” to transfer data from storage to the GPU. The team is considering enabling GPUDirect Storage. What effect will GPUDirect likely have on system performance?
+
+Options:
+A. It will increase achievable I/O bandwidth to the GPU by eliminating extra copies through CPU memory. (Correct)
+B. It will reduce GPU I/O bandwidth due to overhead.
+C. It will have no significant effect on throughput or CPU usage.
+D. It will require disabling NVMe drives and using only network storage.
+
+Correct Answer: A
+
+Explanation: GPUDirect Storage establishes a direct DMA path between GPU and storage, bypassing CPU copies. This significantly increases bandwidth to the GPU and lowers latency
+. Figure 6 in the reference shows GPUDirect (blue line) has much higher bandwidth than using a CPU bounce buffer. Option B is opposite to the observed result. Option C is false because benchmark showed a big improvement. Option D is incorrect – GPUDirect works with NVMe drives as shown. Thus, enabling GPUDirect maximizes GPU I/O bandwidth
+.
+
+Difficulty: Hard
+Domain: Performance Optimization & Scaling
+Cognitive Level: Analyze
+Scenario Type: Optimization / Data Transfer
+
+Question 15: In an NVIDIA Run:AI-managed Kubernetes cluster, project A has higher rank than project B within the same department and node pool. Both have running GPUs. Project C (different department) has exhausted its quota and is over-subscribed. Which workloads will the scheduler consider preempting first?
+
+Options:
+A. Any lower-priority workload in a higher-ranked project.
+B. Workloads based on cross-project fairness, not fixed priority (correct).
+C. Any workload in the lowest-ranked department, regardless of project priority.
+D. The scheduler does not preempt in this situation.
+
+Correct Answer: B
+
+Explanation: NVIDIA Run:AI scheduling uses a fairshare approach across projects and departments
+. It only uses workload priority/preemption within a project, and cross-project or cross-department choices are based on fairness, not fixed priorities
+. Option A is incorrect (priorities apply only within a queue). Option C is also wrong – it’s fairshare, not simply by department rank. Option D is incorrect since fairness-based preemption can occur when oversubscribed. Thus, B is correct.
+
+Difficulty: Hard
+Domain: Kubernetes & Orchestration for AI Workloads
+Cognitive Level: Analyze
+Scenario Type: Incident / Resource Allocation
+
+Question 16: A department’s project is allowed 8 GPUs, and another project is allowed 4 GPUs, but only 9 GPUs are physically available. Both projects are running in-quota and have pending workloads. According to NVIDIA Run:AI’s scheduling policy, how are the leftover GPUs distributed?
+
+Options:
+A. The extra 1 GPU is split as 0.5 GPU to each (impossible).
+B. The extra GPU goes entirely to the department with the higher rank project.
+C. Over-quota resources (the 1 GPU) are first pooled at the department level, then shared by project rank/fairness
+. (Correct)
+D. All projects must drop to fit within 9 GPUs; no over-allocation is allowed.
+
+Correct Answer: C
+
+Explanation: Run:AI uses a multi-level quota and fairshare system. Each department’s deserved (quota) resources are filled first, then any excess (over-quota) GPUs are pooled at the department level and allocated to projects based on rank/fairness
+. Thus, the 1 extra GPU is shared according to those rules. Option B is too simplistic, and D is false – Run:AI does allow over-quota scheduling. Option C correctly describes the hierarchy of quota -> department -> project for over-quota resources
+.
+
+Difficulty: Hard
+Domain: GPU Resource Management & Scheduling
+Cognitive Level: Analyze
+Scenario Type: Resource Allocation / Scheduling
+
+Question 17: Which NVIDIA solution provides active health monitoring and system alerts for data center GPUs in production?
+
+Options:
+A. NVIDIA Management Library (NVML) commands.
+B. NVIDIA DCGM (Data Center GPU Manager). (Correct)
+C. NVIDIA Job profiler.
+D. NVIDIA CUDA Profiler.
+
+Correct Answer: B
+
+Explanation: NVIDIA DCGM is a suite for managing and actively monitoring GPU health in data center clusters
+. It includes diagnostics and alerts, unlike NVML (which is low-level), so it’s the recommended production-grade solution. Options C and D are for profiling performance, not health monitoring. Therefore, DCGM (with its built-in alerts and governance policies) is the correct choice
+.
+
+Difficulty: Medium
+Domain: Monitoring & Observability
+Cognitive Level: Apply
+Scenario Type: Monitoring / Infrastructure Management
+
+Question 18: To restrict access to the AI cluster’s management functions, an administrator uses role-based policies. Which tool is suited to manage user accounts, roles, and permissions for secure cluster access on NVIDIA’s platform?
+
+Options:
+A. NVIDIA Base Command Manager (BCM). (Correct)
+B. NVIDIA CUDA Multi-Process Service (MPS).
+C. NVIDIA
