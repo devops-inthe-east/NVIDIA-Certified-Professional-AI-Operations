@@ -336,9 +336,76 @@ Domain: Monitoring & Observability
 Cognitive Level: Apply
 Scenario Type: Monitoring / Infrastructure Management
 
+
+---- 
+
+
 Question 18: To restrict access to the AI cluster’s management functions, an administrator uses role-based policies. Which tool is suited to manage user accounts, roles, and permissions for secure cluster access on NVIDIA’s platform?
 
 Options:
 A. NVIDIA Base Command Manager (BCM). (Correct)
 B. NVIDIA CUDA Multi-Process Service (MPS).
-C. NVIDIA
+C. NVIDIA Data Center GPU Manager (DCGM).
+D. NVIDIA Triton Inference Server.
+
+Correct Answer: A
+
+Explanation: The exam blueprint lists “Administer user accounts, roles, and permissions to ensure secure access to the cluster using BCM”
+. Base Command Manager includes user/role management for the cluster. MPS (B) and Triton (D) are unrelated to access control. DCGM (C) monitors GPUs but does not manage user roles. Thus BCM is the correct answer
+.
+
+Difficulty: Medium
+Domain: Security & Access Control
+Cognitive Level: Apply
+Scenario Type: Administrative / Security
+
+Question 19: In Kubernetes, you want to enforce that AI training jobs can only pull certified NVIDIA images. Which mechanism supports this policy?
+
+Options:
+A. Configure a private NGC registry and assign pull secrets to users. (Correct)
+B. Use DCGM to whitelist allowed image digests.
+C. Set a firewall rule to block unknown registry domains.
+D. Enable MIG mode on all GPUs (to isolate workloads).
+
+Correct Answer: A
+
+Explanation: Ensuring use of certified NVIDIA images is done by controlling the registry access. By using NVIDIA’s private NGC registry and giving users only those pull credentials, you enforce the policy. DCGM (B) does not manage container images. Firewall rules (C) are too coarse and don’t target images. Enabling MIG (D) is unrelated. Thus, a private registry with pull secrets is the proper method.
+
+Difficulty: Medium
+Domain: Security & Access Control
+Cognitive Level: Apply
+Scenario Type: Security / Configuration
+
+Question 20: A training container fails repeatedly with “Error: Unable to find a suitable node” despite available GPUs. Logs show the pod requested resource: nvidia.com/gpu=1. The node has nvidia.com/gpu.present=true. What is most likely the issue?
+
+Options:
+A. The NVIDIA device plugin is not running.
+B. The pod’s service account lacks permission to use GPUs.
+C. The pod has a mismatched node selector or affinity/anti-affinity. (Correct)
+D. The node lacks permission to read NGC images.
+
+Correct Answer: C
+
+Explanation: This error typically means the pod’s scheduling constraints do not match the node. A common cause is a node selector or affinity rule (e.g. specific zone, GPU type) that excludes the available node. Option A would prevent nvidia.com/gpu from being advertised at all (contradicted by the label). Option B is not how K8s resource permissions work. Option D is irrelevant to scheduling. Therefore, a scheduling mismatch (C) is most likely.
+
+Difficulty: Medium
+Domain: Incident Response & Troubleshooting
+Cognitive Level: Analyze
+Scenario Type: Troubleshooting / Scheduling
+
+Question 21: After upgrading the Kubernetes cluster, GPU metrics have vanished from Prometheus dashboards. The DCGM-Exporter logs show “RBAC: permission denied” when scraping GPU stats. What action will restore GPU monitoring?
+
+Options:
+A. Grant the system:metrics-server service account permission to read NVIDIA DCGM APIs. (Correct)
+B. Reinstall the NVIDIA driver on all nodes.
+C. Downgrade the Kubernetes API server to a version that DCGM-Exporter supports.
+D. Enable experimental metrics in NVIDIA Triton configuration.
+
+Correct Answer: A
+
+Explanation: The RBAC permission error indicates the Prometheus/DCGM-Exporter service account lacks rights to access GPU metrics. The fix is to update Kubernetes RBAC (ClusterRole/ClusterRoleBinding) to allow the metrics-server or DCGM-Exporter to read DCGM endpoints. Options B and D are unrelated to RBAC. Downgrading K8s (C) is unnecessary if the proper role binding is applied. Granting the correct permissions (A) aligns with Kubernetes security and DCGM’s integration requirements.
+
+Difficulty: Hard
+Domain: Monitoring & Observability
+Cognitive Level: Analyze
+Scenario Type: Troubleshooting / Monitoring
